@@ -1,5 +1,10 @@
-// package golog implements logging functions that log errors to stderr and debug
-// messages to stdout
+// package golog implements logging functions that log errors to stderr and
+// debug messages to stdout. Trace logging is also supported. Trace logs go to
+// stdout as well, but they are only written if the program is built with trace
+// enabled, i.e.
+//
+//   -tags trace
+//
 package golog
 
 import (
