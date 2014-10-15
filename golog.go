@@ -43,7 +43,7 @@ func LoggerFor(prefix string) Logger {
 }
 
 func (l *logger) Debug(arg interface{}) {
-	fmt.Fprintf(os.Stdout, l.prefix+"%s", arg)
+	fmt.Fprintf(os.Stdout, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Debugf(message string, args ...interface{}) {
@@ -51,7 +51,7 @@ func (l *logger) Debugf(message string, args ...interface{}) {
 }
 
 func (l *logger) Error(arg interface{}) {
-	fmt.Fprintf(os.Stderr, l.prefix+"%s", arg)
+	fmt.Fprintf(os.Stderr, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Errorf(message string, args ...interface{}) {
