@@ -2,10 +2,10 @@
 
 package golog
 
-func Trace(msg string) {
-	Debug(msg)
+func (l *logger) Trace(arg interface{}) {
+	l.Debug(arg)
 }
 
-func Tracef(fmt string, args ...interface{}) {
-	Debugf(fmt, args...)
+func (l *logger) Tracef(fmt string, args ...interface{}) {
+	l.Debugf(fmt, args...)
 }

@@ -12,34 +12,58 @@ import (
 	"os"
 )
 
-// Debug logs to stdout
-func Debug(arg interface{}) {
-	fmt.Fprintln(os.Stdout, arg)
+type Logger interface {
+	// Debug logs to stdout
+	Debug(arg interface{})
+	// Debugf logs to stdout
+	Debugf(message string, args ...interface{})
+
+	// Error logs to stderr
+	Error(arg interface{})
+	// Errorf logs to stderr
+	Errorf(message string, args ...interface{})
+
+	// Trace logs to stderr only if -tags trace was specified at compile time
+	Trace(arg interface{})
+	// Tracef logs to stderr only if -tags trace was specified at compile time
+	Tracef(message string, args ...interface{})
+
+	// Fatal logs to stderr and then exits with status 1
+	Fatal(arg interface{})
+	// Fatalf logs to stderr and then exits with status 1
+	Fatalf(message string, args ...interface{})
 }
 
-// Debugf logs to stdout
-func Debugf(message string, args ...interface{}) {
-	fmt.Fprintf(os.Stdout, message+"\n", args...)
+type logger struct {
+	prefix string
 }
 
-// Error logs to stderr
-func Error(arg interface{}) {
-	fmt.Fprintln(os.Stderr, arg)
+func LoggerFor(prefix string) Logger {
+	return &logger{prefix + ": "}
 }
 
-// Errorf logs to stderr
-func Errorf(message string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, message+"\n", args...)
+func (l *logger) Debug(arg interface{}) {
+	fmt.Fprintf(os.Stdout, l.prefix+"%s", arg)
 }
 
-// Fatal logs to stderr and then exits with status 1
-func Fatal(arg interface{}) {
-	Error(arg)
+func (l *logger) Debugf(message string, args ...interface{}) {
+	fmt.Fprintf(os.Stdout, l.prefix+message+"\n", args...)
+}
+
+func (l *logger) Error(arg interface{}) {
+	fmt.Fprintf(os.Stderr, l.prefix+"%s", arg)
+}
+
+func (l *logger) Errorf(message string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, l.prefix+message+"\n", args...)
+}
+
+func (l *logger) Fatal(arg interface{}) {
+	l.Error(arg)
 	os.Exit(1)
 }
 
-// Fatalf logs to stderr and then exits with status 1
-func Fatalf(message string, args ...interface{}) {
-	Errorf(message, args...)
+func (l *logger) Fatalf(message string, args ...interface{}) {
+	l.Errorf(message, args...)
 	os.Exit(1)
 }
