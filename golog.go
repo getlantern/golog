@@ -9,6 +9,7 @@ package golog
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -32,14 +33,17 @@ type Logger interface {
 	Fatal(arg interface{})
 	// Fatalf logs to stderr and then exits with status 1
 	Fatalf(message string, args ...interface{})
+
+	// TraceOut provides access to an io.Writer to which trace information can
+	// be streamed. If building with tag "trace", TraceOut will point to
+	// os.Stderr, otherwise it will point to a ioutil.Discared. Each line of
+	// trace information will be prefixed with this Logger's prefix.
+	TraceOut() io.Writer
 }
 
 type logger struct {
-	prefix string
-}
-
-func LoggerFor(prefix string) Logger {
-	return &logger{prefix + ": "}
+	prefix   string
+	traceOut io.Writer
 }
 
 func (l *logger) Debug(arg interface{}) {
@@ -66,4 +70,8 @@ func (l *logger) Fatal(arg interface{}) {
 func (l *logger) Fatalf(message string, args ...interface{}) {
 	l.Errorf(message, args...)
 	os.Exit(1)
+}
+
+func (l *logger) TraceOut() io.Writer {
+	return l.traceOut
 }
