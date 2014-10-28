@@ -44,7 +44,9 @@ type Logger interface {
 
 func LoggerFor(prefix string) Logger {
 	l := &logger{
-		prefix: prefix + ": ",
+		prefix:   prefix + ": ",
+		debugOut: os.Stdout,
+		errorOut: os.Stderr,
 	}
 	l.traceOn, _ = strconv.ParseBool(os.Getenv("TRACE"))
 	if l.traceOn {
@@ -59,22 +61,24 @@ type logger struct {
 	prefix   string
 	traceOn  bool
 	traceOut io.Writer
+	debugOut io.Writer
+	errorOut io.Writer
 }
 
 func (l *logger) Debug(arg interface{}) {
-	fmt.Fprintf(os.Stdout, l.prefix+"%s\n", arg)
+	fmt.Fprintf(l.debugOut, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Debugf(message string, args ...interface{}) {
-	fmt.Fprintf(os.Stdout, l.prefix+message+"\n", args...)
+	fmt.Fprintf(l.debugOut, l.prefix+message+"\n", args...)
 }
 
 func (l *logger) Error(arg interface{}) {
-	fmt.Fprintf(os.Stderr, l.prefix+"%s\n", arg)
+	fmt.Fprintf(l.errorOut, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Errorf(message string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, l.prefix+message+"\n", args...)
+	fmt.Fprintf(l.errorOut, l.prefix+message+"\n", args...)
 }
 
 func (l *logger) Fatal(arg interface{}) {
