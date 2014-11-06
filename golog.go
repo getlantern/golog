@@ -40,6 +40,10 @@ type Logger interface {
 	// Each line of trace information will be prefixed with this Logger's
 	// prefix.
 	TraceOut() io.Writer
+
+	// IsTraceEnabled() indicates whether or not tracing is enabled for this
+	// logger.
+	IsTraceEnabled() bool
 }
 
 func LoggerFor(prefix string) Logger {
@@ -105,6 +109,10 @@ func (l *logger) Tracef(fmt string, args ...interface{}) {
 
 func (l *logger) TraceOut() io.Writer {
 	return l.traceOut
+}
+
+func (l *logger) IsTraceEnabled() bool {
+	return l.traceOn
 }
 
 func (l *logger) newTraceWriter() io.Writer {
