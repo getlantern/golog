@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
+	"sync/atomic"
 )
 
 type Logger interface {
@@ -44,13 +45,14 @@ type Logger interface {
 	// IsTraceEnabled() indicates whether or not tracing is enabled for this
 	// logger.
 	IsTraceEnabled() bool
+
+	// SetOutputs sets the output streams for the various log levels.
+	SetOutputs(errorOut io.Writer, debugOut io.Writer)
 }
 
 func LoggerFor(prefix string) Logger {
 	l := &logger{
-		prefix:   prefix + ": ",
-		debugOut: os.Stdout,
-		errorOut: os.Stderr,
+		prefix: prefix + ": ",
 	}
 	l.traceOn, _ = strconv.ParseBool(os.Getenv("TRACE"))
 	if l.traceOn {
@@ -58,6 +60,8 @@ func LoggerFor(prefix string) Logger {
 	} else {
 		l.traceOut = ioutil.Discard
 	}
+	l.SetOutputs(os.Stderr, os.Stdout)
+
 	return l
 }
 
@@ -65,24 +69,28 @@ type logger struct {
 	prefix   string
 	traceOn  bool
 	traceOut io.Writer
-	debugOut io.Writer
+	outs     atomic.Value
+}
+
+type outs struct {
 	errorOut io.Writer
+	debugOut io.Writer
 }
 
 func (l *logger) Debug(arg interface{}) {
-	fmt.Fprintf(l.debugOut, l.prefix+"%s\n", arg)
+	fmt.Fprintf(l.outs.Load().(*outs).debugOut, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Debugf(message string, args ...interface{}) {
-	fmt.Fprintf(l.debugOut, l.prefix+message+"\n", args...)
+	fmt.Fprintf(l.outs.Load().(*outs).debugOut, l.prefix+message+"\n", args...)
 }
 
 func (l *logger) Error(arg interface{}) {
-	fmt.Fprintf(l.errorOut, l.prefix+"%s\n", arg)
+	fmt.Fprintf(l.outs.Load().(*outs).errorOut, l.prefix+"%s\n", arg)
 }
 
 func (l *logger) Errorf(message string, args ...interface{}) {
-	fmt.Fprintf(l.errorOut, l.prefix+message+"\n", args...)
+	fmt.Fprintf(l.outs.Load().(*outs).errorOut, l.prefix+message+"\n", args...)
 }
 
 func (l *logger) Fatal(arg interface{}) {
@@ -115,25 +123,24 @@ func (l *logger) IsTraceEnabled() bool {
 	return l.traceOn
 }
 
+func (l *logger) SetOutputs(errorOut io.Writer, debugOut io.Writer) {
+	l.outs.Store(&outs{
+		errorOut: errorOut,
+		debugOut: debugOut,
+	})
+}
+
 func (l *logger) newTraceWriter() io.Writer {
 	pr, pw := io.Pipe()
 	br := bufio.NewReader(pr)
-
 	go func() {
-		defer pr.Close()
-		defer pw.Close()
-
 		for {
 			line, err := br.ReadString('\n')
 			if err == nil {
 				// Log the line (minus the trailing newline)
 				l.Trace(line[:len(line)-1])
-			} else {
-				l.Tracef("TraceWriter closed due to unexpected error: %v", err)
-				return
 			}
 		}
 	}()
-
 	return pw
 }

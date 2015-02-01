@@ -2,7 +2,7 @@ package golog
 
 import (
 	"bytes"
-	"io"
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -12,13 +12,13 @@ import (
 
 var (
 	expectedLog      = "myprefix: Hello world\nmyprefix: Hello 5\n"
-	expectedTraceLog = expectedLog + "myprefix: Gravy\nmyprefix: TraceWriter closed due to unexpected error: EOF\n"
+	expectedTraceLog = expectedLog + "myprefix: Gravy\n"
 )
 
 func TestDebug(t *testing.T) {
 	out := bytes.NewBuffer(nil)
 	l := LoggerFor("myprefix")
-	l.(*logger).debugOut = out
+	l.SetOutputs(ioutil.Discard, out)
 	l.Debug("Hello world")
 	l.Debugf("Hello %d", 5)
 
@@ -28,7 +28,7 @@ func TestDebug(t *testing.T) {
 func TestError(t *testing.T) {
 	out := bytes.NewBuffer(nil)
 	l := LoggerFor("myprefix")
-	l.(*logger).errorOut = out
+	l.SetOutputs(out, ioutil.Discard)
 	l.Error("Hello world")
 	l.Errorf("Hello %d", 5)
 
@@ -45,12 +45,10 @@ func TestTraceEnabled(t *testing.T) {
 
 	out := bytes.NewBuffer(nil)
 	l := LoggerFor("myprefix")
-	l.(*logger).debugOut = out
+	l.SetOutputs(ioutil.Discard, out)
 	l.Trace("Hello world")
 	l.Tracef("Hello %d", 5)
-	tw := l.TraceOut()
-	tw.Write([]byte("Gravy\n"))
-	tw.(io.Closer).Close()
+	l.TraceOut().Write([]byte("Gravy\n"))
 
 	// Give trace writer a moment to catch up
 	time.Sleep(50 * time.Millisecond)
@@ -68,7 +66,7 @@ func TestTraceDisabled(t *testing.T) {
 
 	out := bytes.NewBuffer(nil)
 	l := LoggerFor("myprefix")
-	l.(*logger).debugOut = out
+	l.SetOutputs(ioutil.Discard, out)
 	l.Trace("Hello world")
 	l.Tracef("Hello %d", 5)
 	l.TraceOut().Write([]byte("Gravy\n"))
