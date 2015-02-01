@@ -17,8 +17,8 @@ var (
 
 func TestDebug(t *testing.T) {
 	out := bytes.NewBuffer(nil)
+	SetOutputs(ioutil.Discard, out)
 	l := LoggerFor("myprefix")
-	l.SetOutputs(ioutil.Discard, out)
 	l.Debug("Hello world")
 	l.Debugf("Hello %d", 5)
 
@@ -27,8 +27,8 @@ func TestDebug(t *testing.T) {
 
 func TestError(t *testing.T) {
 	out := bytes.NewBuffer(nil)
+	SetOutputs(out, ioutil.Discard)
 	l := LoggerFor("myprefix")
-	l.SetOutputs(out, ioutil.Discard)
 	l.Error("Hello world")
 	l.Errorf("Hello %d", 5)
 
@@ -44,8 +44,8 @@ func TestTraceEnabled(t *testing.T) {
 	defer os.Setenv("TRACE", originalTrace)
 
 	out := bytes.NewBuffer(nil)
+	SetOutputs(ioutil.Discard, out)
 	l := LoggerFor("myprefix")
-	l.SetOutputs(ioutil.Discard, out)
 	l.Trace("Hello world")
 	l.Tracef("Hello %d", 5)
 	l.TraceOut().Write([]byte("Gravy\n"))
@@ -65,8 +65,8 @@ func TestTraceDisabled(t *testing.T) {
 	defer os.Setenv("TRACE", originalTrace)
 
 	out := bytes.NewBuffer(nil)
+	SetOutputs(ioutil.Discard, out)
 	l := LoggerFor("myprefix")
-	l.SetOutputs(ioutil.Discard, out)
 	l.Trace("Hello world")
 	l.Tracef("Hello %d", 5)
 	l.TraceOut().Write([]byte("Gravy\n"))
