@@ -57,6 +57,20 @@ func normalized(log string) string {
 	return replaceNumbers.ReplaceAllString(log, "999")
 }
 
+func TestReport(t *testing.T) {
+	SetOutputs(ioutil.Discard, ioutil.Discard)
+
+	errors := 0
+	RegisterReporter(func(err error, linePrefix string, severity Severity, ctx map[string]interface{}) {
+		if severity == ERROR {
+			errors++
+		}
+	})
+	l := LoggerFor("reporting")
+	l.Error("Some error")
+	assert.Equal(t, 1, errors)
+}
+
 func TestDebug(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(ioutil.Discard, out)
