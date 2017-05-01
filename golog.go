@@ -41,6 +41,8 @@ var (
 	reportersMutex sync.RWMutex
 
 	bufferPool = bpool.NewBufferPool(200)
+
+	onFatal atomic.Value
 )
 
 // Severity is a level of error (higher values are more severe)
@@ -58,6 +60,7 @@ func (s Severity) String() string {
 }
 
 func init() {
+	DefaultOnFatal()
 	ResetOutputs()
 }
 
@@ -82,6 +85,19 @@ func RegisterReporter(reporter ErrorReporter) {
 	reportersMutex.Lock()
 	reporters = append(reporters, reporter)
 	reportersMutex.Unlock()
+}
+
+// OnFatal configures golog to call the given function on any FATAL error. By
+// default, golog calls os.Exit(1) on any FATAL error.
+func OnFatal(fn func(err error)) {
+	onFatal.Store(fn)
+}
+
+// DefaultOnFatal enables the default behavior for OnFatal
+func DefaultOnFatal() {
+	onFatal.Store(func(err error) {
+		os.Exit(1)
+	})
 }
 
 type outputs struct {
@@ -144,7 +160,6 @@ type Logger interface {
 }
 
 func LoggerFor(prefix string) Logger {
-
 	l := &logger{
 		prefix: prefix + ": ",
 		pc:     make([]uintptr, 10),
@@ -277,13 +292,16 @@ func (l *logger) Errorf(message string, args ...interface{}) error {
 }
 
 func (l *logger) Fatal(arg interface{}) {
-	l.errorSkipFrames(arg, 1, FATAL)
-	os.Exit(1)
+	fatal(l.errorSkipFrames(arg, 1, FATAL))
 }
 
 func (l *logger) Fatalf(message string, args ...interface{}) {
-	l.errorSkipFrames(errors.NewOffset(1, message, args...), 1, FATAL)
-	os.Exit(1)
+	fatal(l.errorSkipFrames(errors.NewOffset(1, message, args...), 1, FATAL))
+}
+
+func fatal(err error) {
+	fn := onFatal.Load().(func(err error))
+	fn(err)
 }
 
 func (l *logger) errorSkipFrames(arg interface{}, skipFrames int, severity Severity) error {

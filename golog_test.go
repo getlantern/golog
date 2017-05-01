@@ -59,16 +59,25 @@ func normalized(log string) string {
 
 func TestReport(t *testing.T) {
 	SetOutputs(ioutil.Discard, ioutil.Discard)
+	OnFatal(func(err error) {
+		// ignore (prevents test from exiting)
+	})
 
 	errors := 0
+	fatals := 0
 	RegisterReporter(func(err error, linePrefix string, severity Severity, ctx map[string]interface{}) {
-		if severity == ERROR {
+		switch severity {
+		case ERROR:
 			errors++
+		case FATAL:
+			fatals++
 		}
 	})
 	l := LoggerFor("reporting")
 	l.Error("Some error")
+	l.Fatal("Fatal error")
 	assert.Equal(t, 1, errors)
+	assert.Equal(t, 1, fatals)
 }
 
 func TestDebug(t *testing.T) {
