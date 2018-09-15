@@ -43,6 +43,9 @@ var (
 	bufferPool = bpool.NewBufferPool(200)
 
 	onFatal atomic.Value
+
+	// Impl by default uses the zap logger.
+	Impl = zapLogger
 )
 
 // Severity is a level of error (higher values are more severe)
@@ -122,6 +125,8 @@ type MultiLine interface {
 // new reports if the buffer becomes saturated.
 type ErrorReporter func(err error, linePrefix string, severity Severity, ctx map[string]interface{})
 
+type LoggerFactory func(prefix string) Logger
+
 type Logger interface {
 	// Debug logs to stdout
 	Debug(arg interface{})
@@ -139,27 +144,16 @@ type Logger interface {
 	// Fatalf logs to stderr and then exits with status 1
 	Fatalf(message string, args ...interface{})
 
-	// Trace logs to stderr only if TRACE=true
-	Trace(arg interface{})
-	// Tracef logs to stderr only if TRACE=true
-	Tracef(message string, args ...interface{})
-
-	// TraceOut provides access to an io.Writer to which trace information can
-	// be streamed. If running with environment variable "TRACE=true", TraceOut
-	// will point to os.Stderr, otherwise it will point to a ioutil.Discared.
-	// Each line of trace information will be prefixed with this Logger's
-	// prefix.
-	TraceOut() io.Writer
-
-	// IsTraceEnabled() indicates whether or not tracing is enabled for this
-	// logger.
-	IsTraceEnabled() bool
-
 	// AsStdLogger returns an standard logger
 	AsStdLogger() *log.Logger
 }
 
+// LoggerFor returns the logger for the specified prefix string.
 func LoggerFor(prefix string) Logger {
+	return Impl(prefix)
+}
+
+func goLogLogger(prefix string) Logger {
 	l := &logger{
 		prefix: prefix + ": ",
 		pc:     make([]uintptr, 10),
@@ -330,10 +324,6 @@ func (l *logger) Tracef(message string, args ...interface{}) {
 
 func (l *logger) TraceOut() io.Writer {
 	return l.traceOut
-}
-
-func (l *logger) IsTraceEnabled() bool {
-	return l.traceOn
 }
 
 func (l *logger) newTraceWriter() io.Writer {

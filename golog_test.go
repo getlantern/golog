@@ -2,14 +2,11 @@ package golog
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/getlantern/errors"
 	"github.com/getlantern/ops"
@@ -46,6 +43,7 @@ var (
 )
 
 func init() {
+	Impl = goLogLogger
 	ops.SetGlobal("global", "shouldn't show up")
 }
 
@@ -109,63 +107,6 @@ func TestError(t *testing.T) {
 func errorReturner() error {
 	defer ops.Begin("name").Set("cvarD", "d").End()
 	return errors.New("world")
-}
-
-func TestTraceEnabled(t *testing.T) {
-	originalTrace := os.Getenv("TRACE")
-	err := os.Setenv("TRACE", "true")
-	if err != nil {
-		t.Fatalf("Unable to set trace to true")
-	}
-	defer func() {
-		if err := os.Setenv("TRACE", originalTrace); err != nil {
-			t.Fatalf("Unable to set TRACE environment variable: %v", err)
-		}
-	}()
-
-	out := newBuffer()
-	SetOutputs(ioutil.Discard, out)
-	l := LoggerFor("myprefix")
-	l.Trace("Hello world")
-	l.Tracef("Hello %v", true)
-	tw := l.TraceOut()
-	if _, err := tw.Write([]byte("Gravy\n")); err != nil {
-		t.Fatalf("Unable to write: %v", err)
-	}
-	if err := tw.(io.Closer).Close(); err != nil {
-		t.Fatalf("Unable to close: %v", err)
-	}
-
-	// Give trace writer a moment to catch up
-	time.Sleep(50 * time.Millisecond)
-	assert.Regexp(t, expected("TRACE", expectedTraceLog), out.String())
-}
-
-func TestTraceDisabled(t *testing.T) {
-	originalTrace := os.Getenv("TRACE")
-	err := os.Setenv("TRACE", "false")
-	if err != nil {
-		t.Fatalf("Unable to set trace to false")
-	}
-	defer func() {
-		if err := os.Setenv("TRACE", originalTrace); err != nil {
-			t.Fatalf("Unable to set TRACE environment variable: %v", err)
-		}
-	}()
-
-	out := newBuffer()
-	SetOutputs(ioutil.Discard, out)
-	l := LoggerFor("myprefix")
-	l.Trace("Hello world")
-	l.Tracef("Hello %v", true)
-	if _, err := l.TraceOut().Write([]byte("Gravy\n")); err != nil {
-		t.Fatalf("Unable to write: %v", err)
-	}
-
-	// Give trace writer a moment to catch up
-	time.Sleep(50 * time.Millisecond)
-
-	assert.Equal(t, "", out.String(), "Nothing should have been logged")
 }
 
 func TestAsStdLogger(t *testing.T) {
