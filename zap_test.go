@@ -18,7 +18,7 @@ func TestBasicLogging(t *testing.T) {
 
 	std := log.AsStdLogger()
 
-	std.Print("test")
+	std.Print("std test")
 
 	log.Debug("test")
 	log.Info("test")

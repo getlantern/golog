@@ -125,8 +125,6 @@ type MultiLine interface {
 // new reports if the buffer becomes saturated.
 type ErrorReporter func(err error, linePrefix string, severity Severity, ctx map[string]interface{})
 
-type LoggerFactory func(prefix string) Logger
-
 type Logger interface {
 	// Debug logs to stdout
 	Debug(arg interface{})

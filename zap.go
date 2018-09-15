@@ -17,6 +17,9 @@ var ZapConfig = zap.NewProductionConfig()
 
 func zapLogger(prefix string) Logger {
 	logger, _ := ZapConfig.Build()
+
+	// Make sure our wrapper code isn't what always shows up as the caller.
+	logger = logger.WithOptions(zap.AddCallerSkip(1))
 	return &zapper{z: logger.Named(prefix).Sugar()}
 }
 
