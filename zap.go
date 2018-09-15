@@ -13,7 +13,7 @@ type zapper struct {
 }
 
 // ZapConfig is the public zap configuration.
-var ZapConfig = zap.NewProductionConfig()
+var ZapConfig = zap.NewDevelopmentConfig()
 
 func zapLogger(prefix string) Logger {
 	logger, _ := ZapConfig.Build()
