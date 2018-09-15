@@ -18,7 +18,7 @@ func zapLogger(prefix string) Logger {
 }
 
 func (z *zapper) AsStdLogger() *log.Logger {
-	return nil
+	return zap.NewStdLog(z.z.Desugar())
 }
 
 func (z *zapper) Debug(arg interface{}) {
