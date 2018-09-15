@@ -32,6 +32,14 @@ func (z *zapper) Debugf(message string, args ...interface{}) {
 	z.z.Debugf(message, args...)
 }
 
+func (z *zapper) Info(arg interface{}) {
+	z.z.Info(fmt.Sprintf("%v", arg))
+}
+
+func (z *zapper) Infof(message string, args ...interface{}) {
+	z.z.Infof(message, args...)
+}
+
 func (z *zapper) Error(arg interface{}) error {
 	msg := fmt.Sprintf("%v", arg)
 	z.z.Error(msg)

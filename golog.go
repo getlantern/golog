@@ -133,6 +133,11 @@ type Logger interface {
 	// Debugf logs to stdout
 	Debugf(message string, args ...interface{})
 
+	// Debug logs to stdout
+	Info(arg interface{})
+	// Debugf logs to stdout
+	Infof(message string, args ...interface{})
+
 	// Error logs to stderr
 	Error(arg interface{}) error
 	// Errorf logs to stderr. It returns the first argument that's an error, or
@@ -275,6 +280,14 @@ func (l *logger) Debug(arg interface{}) {
 
 func (l *logger) Debugf(message string, args ...interface{}) {
 	l.printf(GetOutputs().DebugOut, 4, "DEBUG", nil, message, args...)
+}
+
+func (l *logger) Info(arg interface{}) {
+	l.print(GetOutputs().DebugOut, 4, "INFO", arg)
+}
+
+func (l *logger) Infof(message string, args ...interface{}) {
+	l.printf(GetOutputs().DebugOut, 4, "INFO", nil, message, args...)
 }
 
 func (l *logger) Error(arg interface{}) error {
