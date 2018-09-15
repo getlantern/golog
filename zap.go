@@ -12,8 +12,11 @@ type zapper struct {
 	z *zap.SugaredLogger
 }
 
+// ZapConfig is the public zap configuration.
+var ZapConfig = zap.NewProductionConfig()
+
 func zapLogger(prefix string) Logger {
-	logger, _ := zap.NewProduction()
+	logger, _ := ZapConfig.Build()
 	return &zapper{z: logger.Named(prefix).Sugar()}
 }
 
