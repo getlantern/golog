@@ -43,9 +43,6 @@ var (
 	bufferPool = bpool.NewBufferPool(200)
 
 	onFatal atomic.Value
-
-	// Impl by default uses the zap logger.
-	Impl = zapLogger
 )
 
 // Severity is a level of error (higher values are more severe)
@@ -153,7 +150,7 @@ type Logger interface {
 
 // LoggerFor returns the logger for the specified prefix string.
 func LoggerFor(prefix string) Logger {
-	return Impl(prefix)
+	return goLogLogger(prefix)
 }
 
 func goLogLogger(prefix string) Logger {

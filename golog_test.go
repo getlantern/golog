@@ -43,7 +43,6 @@ var (
 )
 
 func init() {
-	Impl = goLogLogger
 	ops.SetGlobal("global", "shouldn't show up")
 }
 

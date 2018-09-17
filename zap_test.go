@@ -3,22 +3,16 @@ package golog
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestBasicLogging(t *testing.T) {
-	log := zapLogger("tester")
-	err := log.Error("test")
+	SetZapConfig(zap.NewDevelopmentConfig())
 
-	assert.Error(t, err)
+	log := ZapLogger("tester")
+	log.Error("test")
 
-	err = log.Errorf("Error %v", "bop")
-
-	assert.Error(t, err)
-
-	std := log.AsStdLogger()
-
-	std.Print("std test")
+	log.Errorf("Error %v", "bop")
 
 	log.Debug("test")
 	log.Info("test")
