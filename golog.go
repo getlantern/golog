@@ -6,11 +6,9 @@
 package golog
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,7 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/getlantern/errors"
@@ -33,12 +30,13 @@ const (
 
 	// FATAL is an error Severity
 	FATAL = 600
+
+	debugSkipFrames = 5
+	errorSkipFrames = 2
 )
 
 var (
-	outs           atomic.Value
-	reporters      []ErrorReporter
-	reportersMutex sync.RWMutex
+	outs atomic.Value
 
 	bufferPool = bpool.NewBufferPool(200)
 
@@ -61,30 +59,30 @@ func (s Severity) String() string {
 
 func init() {
 	DefaultOnFatal()
-	ResetOutputs()
 }
 
+// SetOutputs configures golog to use a streaming backend that writes to the given Writers.
 func SetOutputs(errorOut io.Writer, debugOut io.Writer) {
 	outs.Store(&outputs{
 		ErrorOut: errorOut,
 		DebugOut: debugOut,
 	})
+	setBaseLoggerBuilder(func(prefix string, traceOn bool, printStack bool) baseLogger {
+		return &streamLogger{
+			prefix:     prefix + ": ",
+			traceOn:    traceOn,
+			printStack: printStack,
+		}
+	})
 }
 
+// ResetOutputs resets golog to use a streaming backend that writes to os.Stderr and os.Stdout respectively
 func ResetOutputs() {
 	SetOutputs(os.Stderr, os.Stdout)
 }
 
-func GetOutputs() *outputs {
+func getOutputs() *outputs {
 	return outs.Load().(*outputs)
-}
-
-// RegisterReporter registers the given ErrorReporter. All logged Errors are
-// sent to this reporter.
-func RegisterReporter(reporter ErrorReporter) {
-	reportersMutex.Lock()
-	reporters = append(reporters, reporter)
-	reportersMutex.Unlock()
 }
 
 // OnFatal configures golog to call the given function on any FATAL error. By
@@ -115,103 +113,98 @@ type MultiLine interface {
 	MultiLinePrinter() func(buf *bytes.Buffer) bool
 }
 
-// ErrorReporter is a function to which the logger will report errors.
-// It the given error and corresponding message along with associated ops
-// context. This should return quickly as it executes on the critical code
-// path. The recommended approach is to buffer as much as possible and discard
-// new reports if the buffer becomes saturated.
-type ErrorReporter func(err error, linePrefix string, severity Severity, ctx map[string]interface{})
-
-type Logger interface {
+type baseLogger interface {
 	// Debug logs to stdout
 	Debug(arg interface{})
 	// Debugf logs to stdout
 	Debugf(message string, args ...interface{})
+	// Debugw logs with structured parameters from keysAndValues
+	Debugw(message string, keysAndValues ...interface{})
 
 	// Error logs to stderr
 	Error(arg interface{}) error
 	// Errorf logs to stderr. It returns the first argument that's an error, or
 	// a new error built using fmt.Errorf if none of the arguments are errors.
 	Errorf(message string, args ...interface{}) error
+	// Errorw logs errors with structured parameters from keysAndValues
+	Errorw(message string, keysAndValues ...interface{}) error
 
 	// Fatal logs to stderr and then exits with status 1
 	Fatal(arg interface{})
 	// Fatalf logs to stderr and then exits with status 1
 	Fatalf(message string, args ...interface{})
+	// Fatalw logs errors with structured parameters from keysAndValues
+	Fatalw(message string, keysAndValues ...interface{})
 
 	// Trace logs to stderr only if TRACE=true
 	Trace(arg interface{})
 	// Tracef logs to stderr only if TRACE=true
 	Tracef(message string, args ...interface{})
+	// Tracew logs errors with structured parameters from keysAndValues
+	Tracew(message string, keysAndValues ...interface{})
 
-	// TraceOut provides access to an io.Writer to which trace information can
-	// be streamed. If running with environment variable "TRACE=true", TraceOut
-	// will point to os.Stderr, otherwise it will point to a ioutil.Discared.
-	// Each line of trace information will be prefixed with this Logger's
-	// prefix.
-	TraceOut() io.Writer
+	// AsStdLogger returns a standard logger
+	AsStdLogger() *log.Logger
+}
+
+type Logger interface {
+	baseLogger
 
 	// IsTraceEnabled() indicates whether or not tracing is enabled for this
 	// logger.
 	IsTraceEnabled() bool
-
-	// AsStdLogger returns an standard logger
-	AsStdLogger() *log.Logger
 }
 
+// LoggerFor constructs a logger for the given prefix
 func LoggerFor(prefix string) Logger {
-	l := &logger{
-		prefix: prefix + ": ",
-		pc:     make([]uintptr, 10),
+	return &loggerFacade{
+		prefix:     prefix,
+		traceOn:    isTraceEnabled(prefix),
+		printStack: isStackEnabled(),
 	}
+}
 
+func isTraceEnabled(prefix string) bool {
 	trace := os.Getenv("TRACE")
-	l.traceOn, _ = strconv.ParseBool(trace)
-	if !l.traceOn {
-		prefixes := strings.Split(trace, ",")
-		for _, p := range prefixes {
-			if prefix == strings.Trim(p, " ") {
-				l.traceOn = true
-				break
-			}
+	traceOn, _ := strconv.ParseBool(trace)
+	if traceOn {
+		return true
+	}
+	prefixes := strings.Split(trace, ",")
+	for _, p := range prefixes {
+		if prefix == strings.Trim(p, " ") {
+			return true
 		}
 	}
-	if l.traceOn {
-		l.traceOut = l.newTraceWriter()
-	} else {
-		l.traceOut = ioutil.Discard
-	}
-
-	printStack := os.Getenv("PRINT_STACK")
-	l.printStack, _ = strconv.ParseBool(printStack)
-
-	return l
+	return false
 }
 
-type logger struct {
+func isStackEnabled() bool {
+	printStack, _ := strconv.ParseBool(os.Getenv("PRINT_STACK"))
+	return printStack
+}
+
+type streamLogger struct {
 	prefix     string
 	traceOn    bool
-	traceOut   io.Writer
 	printStack bool
-	outs       atomic.Value
-	pc         []uintptr
-	funcForPc  *runtime.Func
 }
 
 // attaches the file and line number corresponding to
 // the log message
-func (l *logger) linePrefix(skipFrames int) string {
-	runtime.Callers(skipFrames, l.pc)
-	funcForPc := runtime.FuncForPC(l.pc[0])
-	file, line := funcForPc.FileLine(l.pc[0] - 1)
-	return fmt.Sprintf("%s%s:%d ", l.prefix, filepath.Base(file), line)
+func (l *streamLogger) linePrefix(skipFrames int) (string, []uintptr) {
+	pc := make([]uintptr, 10)
+	runtime.Callers(skipFrames, pc)
+	funcForPc := runtime.FuncForPC(pc[0])
+	file, line := funcForPc.FileLine(pc[0] - 1)
+	return fmt.Sprintf("%s%s:%d ", l.prefix, filepath.Base(file), line), pc
 }
 
-func (l *logger) print(out io.Writer, skipFrames int, severity string, arg interface{}) string {
+func (l *streamLogger) print(additionalContext []interface{}, out io.Writer, skipFrames int, severity string, arg interface{}) string {
 	buf := bufferPool.Get()
 	defer bufferPool.Put(buf)
 
-	linePrefix := l.linePrefix(skipFrames)
+	linePrefix, pc := l.linePrefix(skipFrames)
 	writeHeader := func() {
 		buf.WriteString(severity)
 		buf.WriteString(" ")
@@ -222,7 +215,7 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 		if !isMultiline {
 			writeHeader()
 			fmt.Fprintf(buf, "%v", arg)
-			printContext(buf, arg)
+			printContext(additionalContext, buf, arg)
 			buf.WriteByte('\n')
 		} else {
 			mlp := ml.MultiLinePrinter()
@@ -231,7 +224,7 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 				writeHeader()
 				more := mlp(buf)
 				if first {
-					printContext(buf, arg)
+					printContext(additionalContext, buf, arg)
 					first = false
 				}
 				buf.WriteByte('\n')
@@ -247,22 +240,22 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 		errorOnLogging(err)
 	}
 	if l.printStack {
-		l.doPrintStack()
+		l.doPrintStack(pc)
 	}
 
 	return linePrefix
 }
 
-func (l *logger) printf(out io.Writer, skipFrames int, severity string, err error, message string, args ...interface{}) string {
+func (l *streamLogger) printf(additionalContext []interface{}, out io.Writer, skipFrames int, severity string, err error, message string, args ...interface{}) string {
 	buf := bufferPool.Get()
 	defer bufferPool.Put(buf)
 
-	linePrefix := l.linePrefix(skipFrames)
+	linePrefix, pc := l.linePrefix(skipFrames)
 	buf.WriteString(severity)
 	buf.WriteString(" ")
 	buf.WriteString(linePrefix)
 	fmt.Fprintf(buf, message, args...)
-	printContext(buf, err)
+	printContext(additionalContext, buf, err)
 	buf.WriteByte('\n')
 	b := []byte(hidden.Clean(buf.String()))
 	_, err2 := out.Write(b)
@@ -270,33 +263,45 @@ func (l *logger) printf(out io.Writer, skipFrames int, severity string, err erro
 		errorOnLogging(err)
 	}
 	if l.printStack {
-		l.doPrintStack()
+		l.doPrintStack(pc)
 	}
 	return linePrefix
 }
 
-func (l *logger) Debug(arg interface{}) {
-	l.print(GetOutputs().DebugOut, 4, "DEBUG", arg)
+func (l *streamLogger) Debug(arg interface{}) {
+	l.print(nil, getOutputs().DebugOut, debugSkipFrames, "DEBUG", arg)
 }
 
-func (l *logger) Debugf(message string, args ...interface{}) {
-	l.printf(GetOutputs().DebugOut, 4, "DEBUG", nil, message, args...)
+func (l *streamLogger) Debugf(message string, args ...interface{}) {
+	l.printf(nil, getOutputs().DebugOut, debugSkipFrames, "DEBUG", nil, message, args...)
 }
 
-func (l *logger) Error(arg interface{}) error {
-	return l.errorSkipFrames(arg, 1, ERROR)
+func (l *streamLogger) Debugw(message string, keyValuePairs ...interface{}) {
+	l.print(keyValuePairs, getOutputs().DebugOut, debugSkipFrames, "DEBUG", message)
 }
 
-func (l *logger) Errorf(message string, args ...interface{}) error {
-	return l.errorSkipFrames(errors.NewOffset(1, message, args...), 1, ERROR)
+func (l *streamLogger) Error(arg interface{}) error {
+	return l.errorSkipFrames(nil, arg, errorSkipFrames, ERROR)
 }
 
-func (l *logger) Fatal(arg interface{}) {
-	fatal(l.errorSkipFrames(arg, 1, FATAL))
+func (l *streamLogger) Errorf(message string, args ...interface{}) error {
+	return l.errorSkipFrames(nil, errors.NewOffset(errorSkipFrames, message, args...), errorSkipFrames, ERROR)
 }
 
-func (l *logger) Fatalf(message string, args ...interface{}) {
-	fatal(l.errorSkipFrames(errors.NewOffset(1, message, args...), 1, FATAL))
+func (l *streamLogger) Errorw(message string, keyValuePairs ...interface{}) error {
+	return l.errorSkipFrames(keyValuePairs, message, errorSkipFrames, ERROR)
+}
+
+func (l *streamLogger) Fatal(arg interface{}) {
+	fatal(l.errorSkipFrames(nil, arg, errorSkipFrames, FATAL))
+}
+
+func (l *streamLogger) Fatalf(message string, args ...interface{}) {
+	fatal(l.errorSkipFrames(nil, errors.NewOffset(errorSkipFrames, message, args...), errorSkipFrames, FATAL))
+}
+
+func (l *streamLogger) Fatalw(message string, keyValuePairs ...interface{}) {
+	fatal(l.errorSkipFrames(keyValuePairs, message, errorSkipFrames, FATAL))
 }
 
 func fatal(err error) {
@@ -304,7 +309,7 @@ func fatal(err error) {
 	fn(err)
 }
 
-func (l *logger) errorSkipFrames(arg interface{}, skipFrames int, severity Severity) error {
+func (l *streamLogger) errorSkipFrames(additionalContext []interface{}, arg interface{}, skipFrames int, severity Severity) error {
 	var err error
 	switch e := arg.(type) {
 	case error:
@@ -312,66 +317,30 @@ func (l *logger) errorSkipFrames(arg interface{}, skipFrames int, severity Sever
 	default:
 		err = fmt.Errorf("%v", e)
 	}
-	linePrefix := l.print(GetOutputs().ErrorOut, skipFrames+4, severity.String(), err)
-	return report(err, linePrefix, severity)
+	l.print(additionalContext, getOutputs().ErrorOut, skipFrames+4, severity.String(), err)
+	return err
 }
 
-func (l *logger) Trace(arg interface{}) {
+func (l *streamLogger) Trace(arg interface{}) {
 	if l.traceOn {
-		l.print(GetOutputs().DebugOut, 4, "TRACE", arg)
+		l.print(nil, getOutputs().DebugOut, debugSkipFrames, "TRACE", arg)
 	}
 }
 
-func (l *logger) Tracef(message string, args ...interface{}) {
+func (l *streamLogger) Tracef(message string, args ...interface{}) {
 	if l.traceOn {
-		l.printf(GetOutputs().DebugOut, 4, "TRACE", nil, message, args...)
+		l.printf(nil, getOutputs().DebugOut, debugSkipFrames, "TRACE", nil, message, args...)
 	}
 }
 
-func (l *logger) TraceOut() io.Writer {
-	return l.traceOut
-}
-
-func (l *logger) IsTraceEnabled() bool {
-	return l.traceOn
-}
-
-func (l *logger) newTraceWriter() io.Writer {
-	pr, pw := io.Pipe()
-	br := bufio.NewReader(pr)
-
-	if !l.traceOn {
-		return pw
+func (l *streamLogger) Tracew(message string, keyValuePairs ...interface{}) {
+	if l.traceOn {
+		l.print(keyValuePairs, getOutputs().DebugOut, debugSkipFrames, "TRACE", message)
 	}
-	go func() {
-		defer func() {
-			if err := pr.Close(); err != nil {
-				errorOnLogging(err)
-			}
-		}()
-		defer func() {
-			if err := pw.Close(); err != nil {
-				errorOnLogging(err)
-			}
-		}()
-
-		for {
-			line, err := br.ReadString('\n')
-			if err == nil {
-				// Log the line (minus the trailing newline)
-				l.print(GetOutputs().DebugOut, 6, "TRACE", line[:len(line)-1])
-			} else {
-				l.printf(GetOutputs().DebugOut, 6, "TRACE", nil, "TraceWriter closed due to unexpected error: %v", err)
-				return
-			}
-		}
-	}()
-
-	return pw
 }
 
 type errorWriter struct {
-	l *logger
+	l *streamLogger
 }
 
 // Write implements method of io.Writer, due to different call depth,
@@ -381,18 +350,18 @@ func (w *errorWriter) Write(p []byte) (n int, err error) {
 	if s[len(s)-1] == '\n' {
 		s = s[:len(s)-1]
 	}
-	w.l.print(GetOutputs().ErrorOut, 6, "ERROR", s)
+	w.l.print(nil, getOutputs().ErrorOut, 6, "ERROR", s)
 	return len(p), nil
 }
 
-func (l *logger) AsStdLogger() *log.Logger {
+func (l *streamLogger) AsStdLogger() *log.Logger {
 	return log.New(&errorWriter{l}, "", 0)
 }
 
-func (l *logger) doPrintStack() {
+func (l *streamLogger) doPrintStack(pc []uintptr) {
 	var b []byte
 	buf := bytes.NewBuffer(b)
-	for _, pc := range l.pc {
+	for _, pc := range pc {
 		funcForPc := runtime.FuncForPC(pc)
 		if funcForPc == nil {
 			break
@@ -413,9 +382,17 @@ func errorOnLogging(err error) {
 	fmt.Fprintf(os.Stderr, "Unable to log: %v\n", err)
 }
 
-func printContext(buf *bytes.Buffer, err interface{}) {
+func printContext(additionalContext []interface{}, buf *bytes.Buffer, err interface{}) {
 	// Note - we don't include globals when printing in order to avoid polluting the text log
 	values := ops.AsMap(err, false)
+	if len(additionalContext) > 0 && len(additionalContext)%2 == 0 {
+		if values == nil {
+			values = make(map[string]interface{})
+		}
+		for i := 0; i < len(additionalContext); i += 2 {
+			values[additionalContext[i].(string)] = additionalContext[i+1]
+		}
+	}
 	if len(values) == 0 {
 		return
 	}
@@ -435,24 +412,4 @@ func printContext(buf *bytes.Buffer, err interface{}) {
 		fmt.Fprintf(buf, "%v", value)
 	}
 	buf.WriteByte(']')
-}
-
-func report(err error, linePrefix string, severity Severity) error {
-	var reportersCopy []ErrorReporter
-	reportersMutex.RLock()
-	if len(reporters) > 0 {
-		reportersCopy = make([]ErrorReporter, len(reporters))
-		copy(reportersCopy, reporters)
-	}
-	reportersMutex.RUnlock()
-
-	if len(reportersCopy) > 0 {
-		ctx := ops.AsMap(err, true)
-		ctx["severity"] = severity.String()
-		for _, reporter := range reportersCopy {
-			// We include globals when reporting
-			reporter(err, linePrefix, severity, ctx)
-		}
-	}
-	return err
 }

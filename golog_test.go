@@ -2,14 +2,12 @@ package golog
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/getlantern/errors"
 	"github.com/getlantern/ops"
@@ -37,7 +35,7 @@ ERROR myprefix: golog_test.go:999   at github.com/getlantern/golog.TestError (go
 ERROR myprefix: golog_test.go:999   at testing.tRunner (testing.go:999)
 ERROR myprefix: golog_test.go:999   at runtime.goexit (asm_amd999.s:999)
 `
-	expectedTraceLog = "TRACE myprefix: golog_test.go:999 Hello world\nTRACE myprefix: golog_test.go:999 Hello true\nTRACE myprefix: golog_test.go:999 Gravy\nTRACE myprefix: golog_test.go:999 TraceWriter closed due to unexpected error: EOF\n"
+	expectedTraceLog = "TRACE myprefix: golog_test.go:999 Hello world\nTRACE myprefix: golog_test.go:999 Hello true\n"
 	expectedStdLog   = expectedLog
 )
 
@@ -55,29 +53,6 @@ func expected(severity string, log string) string {
 
 func normalized(log string) string {
 	return replaceNumbers.ReplaceAllString(log, "999")
-}
-
-func TestReport(t *testing.T) {
-	SetOutputs(ioutil.Discard, ioutil.Discard)
-	OnFatal(func(err error) {
-		// ignore (prevents test from exiting)
-	})
-
-	errors := 0
-	fatals := 0
-	RegisterReporter(func(err error, linePrefix string, severity Severity, ctx map[string]interface{}) {
-		switch severity {
-		case ERROR:
-			errors++
-		case FATAL:
-			fatals++
-		}
-	})
-	l := LoggerFor("reporting")
-	l.Error("Some error")
-	l.Fatal("Fatal error")
-	assert.Equal(t, 1, errors)
-	assert.Equal(t, 1, fatals)
 }
 
 func TestDebug(t *testing.T) {
@@ -128,16 +103,6 @@ func TestTraceEnabled(t *testing.T) {
 	l := LoggerFor("myprefix")
 	l.Trace("Hello world")
 	l.Tracef("Hello %v", true)
-	tw := l.TraceOut()
-	if _, err := tw.Write([]byte("Gravy\n")); err != nil {
-		t.Fatalf("Unable to write: %v", err)
-	}
-	if err := tw.(io.Closer).Close(); err != nil {
-		t.Fatalf("Unable to close: %v", err)
-	}
-
-	// Give trace writer a moment to catch up
-	time.Sleep(50 * time.Millisecond)
 	assert.Regexp(t, expected("TRACE", expectedTraceLog), out.String())
 }
 
@@ -158,13 +123,6 @@ func TestTraceDisabled(t *testing.T) {
 	l := LoggerFor("myprefix")
 	l.Trace("Hello world")
 	l.Tracef("Hello %v", true)
-	if _, err := l.TraceOut().Write([]byte("Gravy\n")); err != nil {
-		t.Fatalf("Unable to write: %v", err)
-	}
-
-	// Give trace writer a moment to catch up
-	time.Sleep(50 * time.Millisecond)
-
 	assert.Equal(t, "", out.String(), "Nothing should have been logged")
 }
 
