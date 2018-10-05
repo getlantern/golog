@@ -7,32 +7,32 @@ import (
 
 var loggerBuilder atomic.Value
 
-type baseLoggerBuilder func(prefix string, traceOn bool, printStack bool) baseLogger
+type baseLoggerBuilder func(prefix string, debugOn bool, printStack bool) baseLogger
 
 func setBaseLoggerBuilder(builder baseLoggerBuilder) {
 	loggerBuilder.Store(builder)
 }
 
 type loggerFacade struct {
-	prefix     string
-	traceOn    bool
-	printStack bool
+	prefix         string
+	isDebugEnabled bool
+	printStack     bool
 }
 
 func (lf *loggerFacade) getBaseLogger() baseLogger {
-	return loggerBuilder.Load().(baseLoggerBuilder)(lf.prefix, lf.traceOn, lf.printStack)
+	return loggerBuilder.Load().(baseLoggerBuilder)(lf.prefix, lf.isDebugEnabled, lf.printStack)
 }
 
-func (lf *loggerFacade) Debug(arg interface{}) {
-	lf.getBaseLogger().Debug(arg)
+func (lf *loggerFacade) Info(arg interface{}) {
+	lf.getBaseLogger().Info(arg)
 }
 
-func (lf *loggerFacade) Debugf(msg string, args ...interface{}) {
-	lf.getBaseLogger().Debugf(msg, args...)
+func (lf *loggerFacade) Infof(msg string, args ...interface{}) {
+	lf.getBaseLogger().Infof(msg, args...)
 }
 
-func (lf *loggerFacade) Debugw(msg string, keysAndValues ...interface{}) {
-	lf.getBaseLogger().Debugw(msg, keysAndValues...)
+func (lf *loggerFacade) Infow(msg string, keysAndValues ...interface{}) {
+	lf.getBaseLogger().Infow(msg, keysAndValues...)
 }
 
 func (lf *loggerFacade) Error(arg interface{}) error {
@@ -59,22 +59,22 @@ func (lf *loggerFacade) Fatalw(msg string, keysAndValues ...interface{}) {
 	lf.getBaseLogger().Fatalf(msg, keysAndValues...)
 }
 
-func (lf *loggerFacade) Trace(arg interface{}) {
-	lf.getBaseLogger().Trace(arg)
+func (lf *loggerFacade) Debug(arg interface{}) {
+	lf.getBaseLogger().Debug(arg)
 }
 
-func (lf *loggerFacade) Tracef(msg string, args ...interface{}) {
-	lf.getBaseLogger().Tracef(msg, args...)
+func (lf *loggerFacade) Debugf(msg string, args ...interface{}) {
+	lf.getBaseLogger().Debugf(msg, args...)
 }
 
-func (lf *loggerFacade) Tracew(msg string, keysAndValues ...interface{}) {
-	lf.getBaseLogger().Tracew(msg, keysAndValues...)
+func (lf *loggerFacade) Debugw(msg string, keysAndValues ...interface{}) {
+	lf.getBaseLogger().Debugw(msg, keysAndValues...)
 }
 
 func (lf *loggerFacade) AsStdLogger() *log.Logger {
 	return lf.getBaseLogger().AsStdLogger()
 }
 
-func (lf *loggerFacade) IsTraceEnabled() bool {
-	return lf.traceOn
+func (lf *loggerFacade) IsDebugEnabled() bool {
+	return lf.isDebugEnabled
 }

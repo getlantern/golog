@@ -11,8 +11,8 @@ import (
 
 func TestZap(t *testing.T) {
 	ConfigureZap(zap.NewProductionConfig())
-	log := LoggerFor("myprefix")
-	log.Debug("I'm starting")
+	log := NewLogger("myprefix")
+	log.Info("I'm starting")
 
 	parent := ops.Begin("parent").Set("a", 1)
 	defer parent.End()

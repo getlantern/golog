@@ -1,7 +1,7 @@
 // Package golog implements logging functions that log errors to stderr and
-// debug messages to stdout. Trace logging is also supported.
-// Trace logs go to stdout as well, but they are only written if the program
-// is run with environment variable "TRACE=true".
+// info messages to stdout. Debug logging is also supported.
+// Debug logs go to stdout as well, but they are only written if the program
+// is run with environment variable "DEBUG=true".
 // A stack dump will be printed after the message if "PRINT_STACK=true".
 package golog
 
@@ -31,7 +31,7 @@ const (
 	// FATAL is an error Severity
 	FATAL = 600
 
-	debugSkipFrames = 5
+	infoSkipFrames  = 5
 	errorSkipFrames = 2
 )
 
@@ -62,15 +62,15 @@ func init() {
 }
 
 // SetOutputs configures golog to use a streaming backend that writes to the given Writers.
-func SetOutputs(errorOut io.Writer, debugOut io.Writer) {
+func SetOutputs(errorOut io.Writer, infoOut io.Writer) {
 	outs.Store(&outputs{
 		ErrorOut: errorOut,
-		DebugOut: debugOut,
+		InfoOut:  infoOut,
 	})
-	setBaseLoggerBuilder(func(prefix string, traceOn bool, printStack bool) baseLogger {
+	setBaseLoggerBuilder(func(prefix string, debugOn bool, printStack bool) baseLogger {
 		return &streamLogger{
 			prefix:     prefix + ": ",
-			traceOn:    traceOn,
+			debugOn:    debugOn,
 			printStack: printStack,
 		}
 	})
@@ -100,7 +100,7 @@ func DefaultOnFatal() {
 
 type outputs struct {
 	ErrorOut io.Writer
-	DebugOut io.Writer
+	InfoOut  io.Writer
 }
 
 // MultiLine is an interface for arguments that support multi-line output.
@@ -114,12 +114,12 @@ type MultiLine interface {
 }
 
 type baseLogger interface {
-	// Debug logs to stdout
-	Debug(arg interface{})
-	// Debugf logs to stdout
-	Debugf(message string, args ...interface{})
-	// Debugw logs with structured parameters from keysAndValues
-	Debugw(message string, keysAndValues ...interface{})
+	// Info logs to stdout
+	Info(arg interface{})
+	// Infof logs to stdout
+	Infof(message string, args ...interface{})
+	// Infow logs with structured parameters from keysAndValues
+	Infow(message string, keysAndValues ...interface{})
 
 	// Error logs to stderr
 	Error(arg interface{}) error
@@ -136,12 +136,12 @@ type baseLogger interface {
 	// Fatalw logs errors with structured parameters from keysAndValues
 	Fatalw(message string, keysAndValues ...interface{})
 
-	// Trace logs to stderr only if TRACE=true
-	Trace(arg interface{})
-	// Tracef logs to stderr only if TRACE=true
-	Tracef(message string, args ...interface{})
-	// Tracew logs errors with structured parameters from keysAndValues
-	Tracew(message string, keysAndValues ...interface{})
+	// Debug logs to stderr only if DEBUG=true
+	Debug(arg interface{})
+	// Debugf logs to stderr only if DEBUG=true
+	Debugf(message string, args ...interface{})
+	// Debugw logs errors with structured parameters from keysAndValues
+	Debugw(message string, keysAndValues ...interface{})
 
 	// AsStdLogger returns a standard logger
 	AsStdLogger() *log.Logger
@@ -150,27 +150,27 @@ type baseLogger interface {
 type Logger interface {
 	baseLogger
 
-	// IsTraceEnabled() indicates whether or not tracing is enabled for this
+	// IsDebugEnabled() indicates whether or not tracing is enabled for this
 	// logger.
-	IsTraceEnabled() bool
+	IsDebugEnabled() bool
 }
 
-// LoggerFor constructs a logger for the given prefix
-func LoggerFor(prefix string) Logger {
+// NewLogger constructs a logger for the given prefix
+func NewLogger(prefix string) Logger {
 	return &loggerFacade{
-		prefix:     prefix,
-		traceOn:    isTraceEnabled(prefix),
-		printStack: isStackEnabled(),
+		prefix:         prefix,
+		isDebugEnabled: isDebugEnabled(prefix),
+		printStack:     isStackEnabled(),
 	}
 }
 
-func isTraceEnabled(prefix string) bool {
-	trace := os.Getenv("TRACE")
-	traceOn, _ := strconv.ParseBool(trace)
-	if traceOn {
+func isDebugEnabled(prefix string) bool {
+	debug := os.Getenv("DEBUG")
+	debugOn, _ := strconv.ParseBool(debug)
+	if debugOn {
 		return true
 	}
-	prefixes := strings.Split(trace, ",")
+	prefixes := strings.Split(debug, ",")
 	for _, p := range prefixes {
 		if prefix == strings.Trim(p, " ") {
 			return true
@@ -186,7 +186,7 @@ func isStackEnabled() bool {
 
 type streamLogger struct {
 	prefix     string
-	traceOn    bool
+	debugOn    bool
 	printStack bool
 }
 
@@ -268,16 +268,16 @@ func (l *streamLogger) printf(additionalContext []interface{}, out io.Writer, sk
 	return linePrefix
 }
 
-func (l *streamLogger) Debug(arg interface{}) {
-	l.print(nil, getOutputs().DebugOut, debugSkipFrames, "DEBUG", arg)
+func (l *streamLogger) Info(arg interface{}) {
+	l.print(nil, getOutputs().InfoOut, infoSkipFrames, "INFO", arg)
 }
 
-func (l *streamLogger) Debugf(message string, args ...interface{}) {
-	l.printf(nil, getOutputs().DebugOut, debugSkipFrames, "DEBUG", nil, message, args...)
+func (l *streamLogger) Infof(message string, args ...interface{}) {
+	l.printf(nil, getOutputs().InfoOut, infoSkipFrames, "INFO", nil, message, args...)
 }
 
-func (l *streamLogger) Debugw(message string, keyValuePairs ...interface{}) {
-	l.print(keyValuePairs, getOutputs().DebugOut, debugSkipFrames, "DEBUG", message)
+func (l *streamLogger) Infow(message string, keyValuePairs ...interface{}) {
+	l.print(keyValuePairs, getOutputs().InfoOut, infoSkipFrames, "INFO", message)
 }
 
 func (l *streamLogger) Error(arg interface{}) error {
@@ -321,21 +321,21 @@ func (l *streamLogger) errorSkipFrames(additionalContext []interface{}, arg inte
 	return err
 }
 
-func (l *streamLogger) Trace(arg interface{}) {
-	if l.traceOn {
-		l.print(nil, getOutputs().DebugOut, debugSkipFrames, "TRACE", arg)
+func (l *streamLogger) Debug(arg interface{}) {
+	if l.debugOn {
+		l.print(nil, getOutputs().InfoOut, infoSkipFrames, "DEBUG", arg)
 	}
 }
 
-func (l *streamLogger) Tracef(message string, args ...interface{}) {
-	if l.traceOn {
-		l.printf(nil, getOutputs().DebugOut, debugSkipFrames, "TRACE", nil, message, args...)
+func (l *streamLogger) Debugf(message string, args ...interface{}) {
+	if l.debugOn {
+		l.printf(nil, getOutputs().InfoOut, infoSkipFrames, "DEBUG", nil, message, args...)
 	}
 }
 
-func (l *streamLogger) Tracew(message string, keyValuePairs ...interface{}) {
-	if l.traceOn {
-		l.print(keyValuePairs, getOutputs().DebugOut, debugSkipFrames, "TRACE", message)
+func (l *streamLogger) Debugw(message string, keyValuePairs ...interface{}) {
+	if l.debugOn {
+		l.print(keyValuePairs, getOutputs().InfoOut, infoSkipFrames, "DEBUG", message)
 	}
 }
 

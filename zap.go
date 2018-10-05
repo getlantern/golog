@@ -15,7 +15,7 @@ import (
 // ConfigureZap configures golog to use a Zap backend as configured with the given zap.Config
 func ConfigureZap(cfg zap.Config) {
 	var structuredLoggerInstances sync.Map
-	setBaseLoggerBuilder(func(prefix string, traceOn bool, printStack bool) baseLogger {
+	setBaseLoggerBuilder(func(prefix string, debugOn bool, printStack bool) baseLogger {
 		structuredLogger, found := structuredLoggerInstances.Load(prefix)
 		if !found {
 			stacktraceLevel := zap.ErrorLevel
@@ -28,7 +28,7 @@ func ConfigureZap(cfg zap.Config) {
 				fmt.Printf("Error configuring Zap logger, will use stream logger: %v\n", err)
 				structuredLogger = &streamLogger{
 					prefix:     prefix + ": ",
-					traceOn:    traceOn,
+					debugOn:    debugOn,
 					printStack: printStack,
 				}
 			} else {
@@ -44,27 +44,27 @@ type zapLogger struct {
 	*zap.SugaredLogger
 }
 
-func (l *zapLogger) Trace(arg interface{}) {
+func (l *zapLogger) Debug(arg interface{}) {
 	l.getSugaredLogger(nil).Debug(hidden.Clean(fmt.Sprint(arg)))
 }
 
-func (l *zapLogger) Tracef(template string, args ...interface{}) {
+func (l *zapLogger) Debugf(template string, args ...interface{}) {
 	l.getSugaredLogger(nil).Debug(hidden.Clean(fmt.Sprintf(template, args...)))
 }
 
-func (l *zapLogger) Tracew(msg string, keysAndValues ...interface{}) {
+func (l *zapLogger) Debugw(msg string, keysAndValues ...interface{}) {
 	l.getSugaredLogger(nil).Debugw(msg, keysAndValues...)
 }
 
-func (l *zapLogger) Debug(arg interface{}) {
+func (l *zapLogger) Info(arg interface{}) {
 	l.getSugaredLogger(nil).Info(hidden.Clean(fmt.Sprint(arg)))
 }
 
-func (l *zapLogger) Debugf(template string, args ...interface{}) {
+func (l *zapLogger) Infof(template string, args ...interface{}) {
 	l.getSugaredLogger(nil).Infof(hidden.Clean(fmt.Sprintf(template, args...)))
 }
 
-func (l *zapLogger) Debugw(msg string, keysAndValues ...interface{}) {
+func (l *zapLogger) Infow(msg string, keysAndValues ...interface{}) {
 	l.getSugaredLogger(nil).Infow(msg, keysAndValues...)
 }
 

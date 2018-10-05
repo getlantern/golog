@@ -35,7 +35,7 @@ ERROR myprefix: golog_test.go:999   at github.com/getlantern/golog.TestError (go
 ERROR myprefix: golog_test.go:999   at testing.tRunner (testing.go:999)
 ERROR myprefix: golog_test.go:999   at runtime.goexit (asm_amd999.s:999)
 `
-	expectedTraceLog = "TRACE myprefix: golog_test.go:999 Hello world\nTRACE myprefix: golog_test.go:999 Hello true\n"
+	expectedDebugLog = "DEBUG myprefix: golog_test.go:999 Hello world\nDEBUG myprefix: golog_test.go:999 Hello true\n"
 	expectedStdLog   = expectedLog
 )
 
@@ -55,20 +55,20 @@ func normalized(log string) string {
 	return replaceNumbers.ReplaceAllString(log, "999")
 }
 
-func TestDebug(t *testing.T) {
+func TestInfo(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(ioutil.Discard, out)
-	l := LoggerFor("myprefix")
-	l.Debug("Hello world")
+	l := NewLogger("myprefix")
+	l.Info("Hello world")
 	defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").End()
-	l.Debugf("Hello %v", true)
-	assert.Equal(t, expected("DEBUG", expectedLog), out.String())
+	l.Infof("Hello %v", true)
+	assert.Equal(t, expected("INFO", expectedLog), out.String())
 }
 
 func TestError(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(out, ioutil.Discard)
-	l := LoggerFor("myprefix")
+	l := NewLogger("myprefix")
 	ctx := ops.Begin("name").Set("cvarC", "c")
 	err := errorReturner()
 	err1 := errors.New("Hello %v", err)
@@ -86,79 +86,56 @@ func errorReturner() error {
 	return errors.New("world")
 }
 
-func TestTraceEnabled(t *testing.T) {
-	originalTrace := os.Getenv("TRACE")
-	err := os.Setenv("TRACE", "true")
+func TestDebugEnabled(t *testing.T) {
+	originalDebug := os.Getenv("DEBUG")
+	err := os.Setenv("DEBUG", "true")
 	if err != nil {
-		t.Fatalf("Unable to set trace to true")
+		t.Fatalf("Unable to set DEBUG to true")
 	}
 	defer func() {
-		if err := os.Setenv("TRACE", originalTrace); err != nil {
-			t.Fatalf("Unable to set TRACE environment variable: %v", err)
+		if err := os.Setenv("DEBUG", originalDebug); err != nil {
+			t.Fatalf("Unable to set DEBUG environment variable: %v", err)
 		}
 	}()
 
 	out := newBuffer()
 	SetOutputs(ioutil.Discard, out)
-	l := LoggerFor("myprefix")
-	l.Trace("Hello world")
-	l.Tracef("Hello %v", true)
-	assert.Regexp(t, expected("TRACE", expectedTraceLog), out.String())
+	l := NewLogger("myprefix")
+	l.Debug("Hello world")
+	l.Debugf("Hello %v", true)
+	assert.Regexp(t, expected("DEBUG", expectedDebugLog), out.String())
 }
 
-func TestTraceDisabled(t *testing.T) {
-	originalTrace := os.Getenv("TRACE")
-	err := os.Setenv("TRACE", "false")
+func TestDebugDisabled(t *testing.T) {
+	originalDebug := os.Getenv("DEBUG")
+	err := os.Setenv("DEBUG", "false")
 	if err != nil {
-		t.Fatalf("Unable to set trace to false")
+		t.Fatalf("Unable to set DEBUG to false")
 	}
 	defer func() {
-		if err := os.Setenv("TRACE", originalTrace); err != nil {
-			t.Fatalf("Unable to set TRACE environment variable: %v", err)
+		if err := os.Setenv("DEBUG", originalDebug); err != nil {
+			t.Fatalf("Unable to set DEBUG environment variable: %v", err)
 		}
 	}()
 
 	out := newBuffer()
 	SetOutputs(ioutil.Discard, out)
-	l := LoggerFor("myprefix")
-	l.Trace("Hello world")
-	l.Tracef("Hello %v", true)
+	l := NewLogger("myprefix")
+	l.Debug("Hello world")
+	l.Debugf("Hello %v", true)
 	assert.Equal(t, "", out.String(), "Nothing should have been logged")
 }
 
 func TestAsStdLogger(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(out, ioutil.Discard)
-	l := LoggerFor("myprefix")
+	l := NewLogger("myprefix")
 	stdlog := l.AsStdLogger()
 	stdlog.Print("Hello world")
 	defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").End()
 	stdlog.Printf("Hello %v", true)
 	assert.Equal(t, expected("ERROR", expectedStdLog), out.String())
 }
-
-// TODO: TraceWriter appears to have been broken since we added line numbers
-// func TestTraceWriter(t *testing.T) {
-// 	originalTrace := os.Getenv("TRACE")
-// 	err := os.Setenv("TRACE", "true")
-// 	if err != nil {
-// 		t.Fatalf("Unable to set trace to true")
-// 	}
-// 	defer func() {
-// 		if err := os.Setenv("TRACE", originalTrace); err != nil {
-// 			t.Fatalf("Unable to set TRACE environment variable: %v", err)
-// 		}
-// 	}()
-//
-// 	out := newBuffer()
-// 	SetOutputs(ioutil.Discard, out)
-// 	l := LoggerFor("myprefix")
-// 	trace := l.TraceOut()
-// 	trace.Write([]byte("Hello world\n"))
-// 	defer ops.Begin().Set("cvarA", "a").Set("cvarB", "b").End()
-// 	trace.Write([]byte("Hello true\n"))
-// 	assert.Equal(t, expected("TRACE", expectedStdLog), out.String())
-// }
 
 func newBuffer() *synchronizedbuffer {
 	return &synchronizedbuffer{orig: &bytes.Buffer{}}
