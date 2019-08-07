@@ -37,6 +37,7 @@ const (
 
 var (
 	outs           atomic.Value
+	prepender      atomic.Value
 	reporters      []ErrorReporter
 	reportersMutex sync.RWMutex
 
@@ -62,6 +63,21 @@ func (s Severity) String() string {
 func init() {
 	DefaultOnFatal()
 	ResetOutputs()
+	ResetPrepender()
+}
+
+// SetPrepender sets a function to write something, e.g., the timestamp, before
+// each line of the log.
+func SetPrepender(p func(io.Writer)) {
+	prepender.Store(p)
+}
+
+func ResetPrepender() {
+	SetPrepender(func(io.Writer) {})
+}
+
+func GetPrepender() func(io.Writer) {
+	return prepender.Load().(func(io.Writer))
 }
 
 func SetOutputs(errorOut io.Writer, debugOut io.Writer) {
@@ -120,7 +136,7 @@ type MultiLine interface {
 // context. This should return quickly as it executes on the critical code
 // path. The recommended approach is to buffer as much as possible and discard
 // new reports if the buffer becomes saturated.
-type ErrorReporter func(err error, linePrefix string, severity Severity, ctx map[string]interface{})
+type ErrorReporter func(err error, severity Severity, ctx map[string]interface{})
 
 type Logger interface {
 	// Debug logs to stdout
@@ -207,10 +223,11 @@ func (l *logger) linePrefix(skipFrames int) string {
 	return fmt.Sprintf("%s%s:%d ", l.prefix, filepath.Base(file), line)
 }
 
-func (l *logger) print(out io.Writer, skipFrames int, severity string, arg interface{}) string {
+func (l *logger) print(out io.Writer, skipFrames int, severity string, arg interface{}) {
 	buf := bufferPool.Get()
 	defer bufferPool.Put(buf)
 
+	GetPrepender()(buf)
 	linePrefix := l.linePrefix(skipFrames)
 	writeHeader := func() {
 		buf.WriteString(severity)
@@ -249,14 +266,13 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 	if l.printStack {
 		l.doPrintStack()
 	}
-
-	return linePrefix
 }
 
-func (l *logger) printf(out io.Writer, skipFrames int, severity string, err error, message string, args ...interface{}) string {
+func (l *logger) printf(out io.Writer, skipFrames int, severity string, err error, message string, args ...interface{}) {
 	buf := bufferPool.Get()
 	defer bufferPool.Put(buf)
 
+	GetPrepender()(buf)
 	linePrefix := l.linePrefix(skipFrames)
 	buf.WriteString(severity)
 	buf.WriteString(" ")
@@ -272,7 +288,6 @@ func (l *logger) printf(out io.Writer, skipFrames int, severity string, err erro
 	if l.printStack {
 		l.doPrintStack()
 	}
-	return linePrefix
 }
 
 func (l *logger) Debug(arg interface{}) {
@@ -312,8 +327,8 @@ func (l *logger) errorSkipFrames(arg interface{}, skipFrames int, severity Sever
 	default:
 		err = fmt.Errorf("%v", e)
 	}
-	linePrefix := l.print(GetOutputs().ErrorOut, skipFrames+4, severity.String(), err)
-	return report(err, linePrefix, severity)
+	l.print(GetOutputs().ErrorOut, skipFrames+4, severity.String(), err)
+	return report(err, severity)
 }
 
 func (l *logger) Trace(arg interface{}) {
@@ -437,7 +452,7 @@ func printContext(buf *bytes.Buffer, err interface{}) {
 	buf.WriteByte(']')
 }
 
-func report(err error, linePrefix string, severity Severity) error {
+func report(err error, severity Severity) error {
 	var reportersCopy []ErrorReporter
 	reportersMutex.RLock()
 	if len(reporters) > 0 {
@@ -451,7 +466,7 @@ func report(err error, linePrefix string, severity Severity) error {
 		ctx["severity"] = severity.String()
 		for _, reporter := range reportersCopy {
 			// We include globals when reporting
-			reporter(err, linePrefix, severity, ctx)
+			reporter(err, severity, ctx)
 		}
 	}
 	return err

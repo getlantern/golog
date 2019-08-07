@@ -65,7 +65,7 @@ func TestReport(t *testing.T) {
 
 	errors := 0
 	fatals := 0
-	RegisterReporter(func(err error, linePrefix string, severity Severity, ctx map[string]interface{}) {
+	RegisterReporter(func(err error, severity Severity, ctx map[string]interface{}) {
 		switch severity {
 		case ERROR:
 			errors++
