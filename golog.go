@@ -283,7 +283,7 @@ func (l *logger) printf(out io.Writer, skipFrames int, severity string, err erro
 	b := []byte(hidden.Clean(buf.String()))
 	_, err2 := out.Write(b)
 	if err2 != nil {
-		errorOnLogging(err)
+		errorOnLogging(err2)
 	}
 	if l.printStack {
 		l.doPrintStack()
