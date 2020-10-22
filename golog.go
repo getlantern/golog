@@ -80,13 +80,20 @@ func GetPrepender() func(io.Writer) {
 	return prepender.Load().(func(io.Writer))
 }
 
-func SetOutputs(errorOut io.Writer, debugOut io.Writer) {
+// SetOutputs sets the outputs for error and debug logs to use the given writers.
+// Returns a function that resets outputs to their original values prior to calling SetOutputs.
+func SetOutputs(errorOut io.Writer, debugOut io.Writer) (reset func()) {
+	oldOuts := outs.Load()
 	outs.Store(&outputs{
 		ErrorOut: errorOut,
 		DebugOut: debugOut,
 	})
+	return func() {
+		outs.Store(oldOuts)
+	}
 }
 
+// Deprecated: instead of calling ResetOutputs, use the reset function returned by SetOutputs.
 func ResetOutputs() {
 	SetOutputs(os.Stderr, os.Stdout)
 }
