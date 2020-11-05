@@ -43,6 +43,7 @@ func (w *testLogWriter) Write(p []byte) (n int, err error) {
 		_, err := os.Stderr.Write(p)
 		return len(p), err
 	}
+	w.Log(string(p))
 	return len(p), nil
 }
 
