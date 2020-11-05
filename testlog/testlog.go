@@ -1,7 +1,7 @@
 package testlog
 
 import (
-	"errors"
+	"os"
 	"sync"
 	"testing"
 
@@ -20,8 +20,7 @@ import (
 //    }
 //
 func Capture(t *testing.T) func() {
-	w := &testLogWriter{T: t, ch: make(chan []byte)}
-	go w.run()
+	w := &testLogWriter{T: t}
 	reset := golog.SetOutputs(w, w)
 	return func() {
 		reset()
@@ -31,30 +30,24 @@ func Capture(t *testing.T) func() {
 
 type testLogWriter struct {
 	*testing.T
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	stopped bool
-	ch      chan []byte
 }
 
 func (w *testLogWriter) Write(p []byte) (n int, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.stopped {
-		w.ch <- p
-		return len(p), nil
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.stopped {
+		// After writer stopped, just log to console
+		p = append([]byte("(logged after test capture stopped) "), p...)
+		_, err := os.Stderr.Write(p)
+		return len(p), err
 	}
-	return 0, errors.New("writing to stopped testlog writer")
+	return len(p), nil
 }
 
 func (w *testLogWriter) stop() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.stopped = true
-	close(w.ch)
-}
-
-func (w *testLogWriter) run() {
-	for p := range w.ch {
-		w.Log((string)(p))
-	}
+	w.mu.Unlock()
 }

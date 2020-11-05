@@ -39,9 +39,11 @@ func TestConcurrent(t *testing.T) {
 	// Note: Run "go test -count 10 -run Concurrent -race"
 	golog.SetOutputs(ioutil.Discard, ioutil.Discard)
 	stop := Capture(t)
-	go func() {
+	for i := 0; i < 100; i++ {
+		go func() {
+			log.Debug("something")
+		}()
 		log.Debug("something")
-	}()
-	log.Debug("something")
+	}
 	stop()
 }
