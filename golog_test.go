@@ -179,6 +179,35 @@ func TestAsStdLogger(t *testing.T) {
 	assert.Equal(t, expected("ERROR", expectedStdLog), out.String())
 }
 
+func TestStripPII(t *testing.T) {
+	testCases := map[string]struct{
+		stripPII string
+		expected string
+	}{
+		"test_strip_pii": {
+			stripPII: "true",
+			expected: "DEBUG myprefix: golog_test.go:999 Hello true [X-Lantern-User-Id=x-x-x-x-x cvarA=a cvarB=b op=name root_op=name]\n",
+		},
+		"test_do_not_strip_pii": {
+			stripPII: "false",
+			expected: "DEBUG myprefix: golog_test.go:999 Hello true [X-Lantern-User-Id=999 cvarA=a cvarB=b op=name root_op=name]\n",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			os.Setenv("STRIP_PII", tc.stripPII)
+			out := newBuffer()
+			SetOutputs(ioutil.Discard, out)
+			l := LoggerFor("myprefix")
+			//l.Debug("Hello world")
+			defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").Set("X-Lantern-User-Id", "999").End()
+			l.Debugf("Hello %v", true)
+			assert.Equal(t, expected("DEBUG", tc.expected), out.String())
+		})
+	}
+}
+
 // TODO: TraceWriter appears to have been broken since we added line numbers
 // func TestTraceWriter(t *testing.T) {
 // 	originalTrace := os.Getenv("TRACE")

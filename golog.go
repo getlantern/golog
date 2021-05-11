@@ -188,6 +188,9 @@ func LoggerFor(prefix string) Logger {
 		pc:     make([]uintptr, 10),
 	}
 
+	stripII := os.Getenv("STRIP_PII")
+	l.stripPII, _ = strconv.ParseBool(stripII)
+
 	trace := os.Getenv("TRACE")
 	l.traceOn, _ = strconv.ParseBool(trace)
 	if !l.traceOn {
@@ -214,6 +217,7 @@ func LoggerFor(prefix string) Logger {
 type logger struct {
 	prefix     string
 	traceOn    bool
+	stripPII   bool
 	traceOut   io.Writer
 	printStack bool
 	outs       atomic.Value
@@ -246,7 +250,7 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 		if !isMultiline {
 			writeHeader()
 			fmt.Fprintf(buf, "%v", arg)
-			printContext(buf, arg)
+			l.printContext(buf, arg)
 			buf.WriteByte('\n')
 		} else {
 			mlp := ml.MultiLinePrinter()
@@ -255,7 +259,7 @@ func (l *logger) print(out io.Writer, skipFrames int, severity string, arg inter
 				writeHeader()
 				more := mlp(buf)
 				if first {
-					printContext(buf, arg)
+					l.printContext(buf, arg)
 					first = false
 				}
 				buf.WriteByte('\n')
@@ -285,7 +289,7 @@ func (l *logger) printf(out io.Writer, skipFrames int, severity string, err erro
 	buf.WriteString(" ")
 	buf.WriteString(linePrefix)
 	fmt.Fprintf(buf, message, args...)
-	printContext(buf, err)
+	l.printContext(buf, err)
 	buf.WriteByte('\n')
 	b := []byte(hidden.Clean(buf.String()))
 	_, err2 := out.Write(b)
@@ -435,7 +439,7 @@ func errorOnLogging(err error) {
 	fmt.Fprintf(os.Stderr, "Unable to log: %v\n", err)
 }
 
-func printContext(buf *bytes.Buffer, err interface{}) {
+func (l *logger) printContext(buf *bytes.Buffer, err interface{}) {
 	// Note - we don't include globals when printing in order to avoid polluting the text log
 	values := ops.AsMap(err, false)
 	if len(values) == 0 {
@@ -454,6 +458,9 @@ func printContext(buf *bytes.Buffer, err interface{}) {
 		}
 		buf.WriteString(key)
 		buf.WriteString("=")
+		if l.stripPII {
+			value = stripPII(key, value)
+		}
 		fmt.Fprintf(buf, "%v", value)
 	}
 	buf.WriteByte(']')
@@ -477,4 +484,22 @@ func report(err error, severity Severity) error {
 		}
 	}
 	return err
+}
+
+func stripPII(key string, value interface{}) interface{} {
+	fields := []string{
+		"Cf-Connecting-Ip",
+		"Cf-Ipcountry",
+		"X-Forwarded-For",
+		"remote_addr",
+		"X-Lantern-Device-Id",
+		"X-Lantern-User-Id",
+	}
+
+	for _, field := range fields {
+		if field == key {
+			return "x-x-x-x-x"
+		}
+	}
+	return value
 }
