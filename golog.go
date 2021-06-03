@@ -13,8 +13,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +20,6 @@ import (
 	"sync/atomic"
 
 	"github.com/getlantern/errors"
-	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
 	"github.com/oxtoacart/bpool"
 )
@@ -36,7 +33,8 @@ const (
 )
 
 var (
-	outs           atomic.Value
+	output         Output
+	outputMx       sync.RWMutex
 	prepender      atomic.Value
 	reporters      []ErrorReporter
 	reportersMutex sync.RWMutex
@@ -80,16 +78,22 @@ func GetPrepender() func(io.Writer) {
 	return prepender.Load().(func(io.Writer))
 }
 
-// SetOutputs sets the outputs for error and debug logs to use the given writers.
+// SetOutputs sets the outputs for error and debug logs to use the given Outputs.
 // Returns a function that resets outputs to their original values prior to calling SetOutputs.
 func SetOutputs(errorOut io.Writer, debugOut io.Writer) (reset func()) {
-	oldOuts := outs.Load()
-	outs.Store(&outputs{
-		ErrorOut: errorOut,
-		DebugOut: debugOut,
-	})
+	return SetOutput(TextOutput(errorOut, debugOut))
+}
+
+// SetOutput sets the Output to use for errors and debug messages
+func SetOutput(out Output) (reset func()) {
+	outputMx.Lock()
+	defer outputMx.Unlock()
+	oldOut := output
+	output = out
 	return func() {
-		outs.Store(oldOuts)
+		outputMx.Lock()
+		defer outputMx.Unlock()
+		output = oldOut
 	}
 }
 
@@ -98,8 +102,16 @@ func ResetOutputs() {
 	SetOutputs(os.Stderr, os.Stdout)
 }
 
-func GetOutputs() *outputs {
-	return outs.Load().(*outputs)
+func getErrorOut() outputFn {
+	outputMx.RLock()
+	defer outputMx.RUnlock()
+	return output.Error
+}
+
+func getDebugOut() outputFn {
+	outputMx.RLock()
+	defer outputMx.RUnlock()
+	return output.Debug
 }
 
 // RegisterReporter registers the given ErrorReporter. All logged Errors are
@@ -121,11 +133,6 @@ func DefaultOnFatal() {
 	onFatal.Store(func(err error) {
 		os.Exit(1)
 	})
-}
-
-type outputs struct {
-	ErrorOut io.Writer
-	DebugOut io.Writer
 }
 
 // MultiLine is an interface for arguments that support multi-line output.
@@ -185,7 +192,6 @@ type Logger interface {
 func LoggerFor(prefix string) Logger {
 	l := &logger{
 		prefix: prefix + ": ",
-		pc:     make([]uintptr, 10),
 	}
 
 	trace := os.Getenv("TRACE")
@@ -217,92 +223,22 @@ type logger struct {
 	traceOut   io.Writer
 	printStack bool
 	outs       atomic.Value
-	pc         []uintptr
-	funcForPc  *runtime.Func
 }
 
-// attaches the file and line number corresponding to
-// the log message
-func (l *logger) linePrefix(skipFrames int) string {
-	runtime.Callers(skipFrames, l.pc)
-	funcForPc := runtime.FuncForPC(l.pc[0])
-	file, line := funcForPc.FileLine(l.pc[0] - 1)
-	return fmt.Sprintf("%s%s:%d ", l.prefix, filepath.Base(file), line)
+func (l *logger) print(write outputFn, skipFrames int, severity string, arg interface{}) {
+	write(l.prefix, skipFrames+2, l.printStack, severity, arg, ops.AsMap(arg, false))
 }
 
-func (l *logger) print(out io.Writer, skipFrames int, severity string, arg interface{}) {
-	buf := bufferPool.Get()
-	defer bufferPool.Put(buf)
-
-	GetPrepender()(buf)
-	linePrefix := l.linePrefix(skipFrames)
-	writeHeader := func() {
-		buf.WriteString(severity)
-		buf.WriteString(" ")
-		buf.WriteString(linePrefix)
-	}
-	if arg != nil {
-		ml, isMultiline := arg.(MultiLine)
-		if !isMultiline {
-			writeHeader()
-			fmt.Fprintf(buf, "%v", arg)
-			printContext(buf, arg)
-			buf.WriteByte('\n')
-		} else {
-			mlp := ml.MultiLinePrinter()
-			first := true
-			for {
-				writeHeader()
-				more := mlp(buf)
-				if first {
-					printContext(buf, arg)
-					first = false
-				}
-				buf.WriteByte('\n')
-				if !more {
-					break
-				}
-			}
-		}
-	}
-	b := []byte(hidden.Clean(buf.String()))
-	_, err := out.Write(b)
-	if err != nil {
-		errorOnLogging(err)
-	}
-	if l.printStack {
-		l.doPrintStack()
-	}
-}
-
-func (l *logger) printf(out io.Writer, skipFrames int, severity string, err error, message string, args ...interface{}) {
-	buf := bufferPool.Get()
-	defer bufferPool.Put(buf)
-
-	GetPrepender()(buf)
-	linePrefix := l.linePrefix(skipFrames)
-	buf.WriteString(severity)
-	buf.WriteString(" ")
-	buf.WriteString(linePrefix)
-	fmt.Fprintf(buf, message, args...)
-	printContext(buf, err)
-	buf.WriteByte('\n')
-	b := []byte(hidden.Clean(buf.String()))
-	_, err2 := out.Write(b)
-	if err2 != nil {
-		errorOnLogging(err2)
-	}
-	if l.printStack {
-		l.doPrintStack()
-	}
+func (l *logger) printf(write outputFn, skipFrames int, severity string, message string, args ...interface{}) {
+	l.print(write, skipFrames+1, severity, fmt.Sprintf(message, args...))
 }
 
 func (l *logger) Debug(arg interface{}) {
-	l.print(GetOutputs().DebugOut, 4, "DEBUG", arg)
+	l.print(getDebugOut(), 4, "DEBUG", arg)
 }
 
 func (l *logger) Debugf(message string, args ...interface{}) {
-	l.printf(GetOutputs().DebugOut, 4, "DEBUG", nil, message, args...)
+	l.printf(getDebugOut(), 4, "DEBUG", message, args...)
 }
 
 func (l *logger) Error(arg interface{}) error {
@@ -334,19 +270,19 @@ func (l *logger) errorSkipFrames(arg interface{}, skipFrames int, severity Sever
 	default:
 		err = fmt.Errorf("%v", e)
 	}
-	l.print(GetOutputs().ErrorOut, skipFrames+4, severity.String(), err)
+	l.print(getErrorOut(), skipFrames+4, severity.String(), err)
 	return report(err, severity)
 }
 
 func (l *logger) Trace(arg interface{}) {
 	if l.traceOn {
-		l.print(GetOutputs().DebugOut, 4, "TRACE", arg)
+		l.print(getDebugOut(), 4, "TRACE", arg)
 	}
 }
 
 func (l *logger) Tracef(message string, args ...interface{}) {
 	if l.traceOn {
-		l.printf(GetOutputs().DebugOut, 4, "TRACE", nil, message, args...)
+		l.printf(getDebugOut(), 4, "TRACE", message, args...)
 	}
 }
 
@@ -381,9 +317,9 @@ func (l *logger) newTraceWriter() io.Writer {
 			line, err := br.ReadString('\n')
 			if err == nil {
 				// Log the line (minus the trailing newline)
-				l.print(GetOutputs().DebugOut, 6, "TRACE", line[:len(line)-1])
+				l.print(getDebugOut(), 6, "TRACE", line[:len(line)-1])
 			} else {
-				l.printf(GetOutputs().DebugOut, 6, "TRACE", nil, "TraceWriter closed due to unexpected error: %v", err)
+				l.printf(getDebugOut(), 6, "TRACE", "TraceWriter closed due to unexpected error: %v", err)
 				return
 			}
 		}
@@ -403,7 +339,7 @@ func (w *errorWriter) Write(p []byte) (n int, err error) {
 	if s[len(s)-1] == '\n' {
 		s = s[:len(s)-1]
 	}
-	w.l.print(GetOutputs().ErrorOut, 6, "ERROR", s)
+	w.l.print(getErrorOut(), 6, "ERROR", s)
 	return len(p), nil
 }
 
@@ -411,33 +347,11 @@ func (l *logger) AsStdLogger() *log.Logger {
 	return log.New(&errorWriter{l}, "", 0)
 }
 
-func (l *logger) doPrintStack() {
-	var b []byte
-	buf := bytes.NewBuffer(b)
-	for _, pc := range l.pc {
-		funcForPc := runtime.FuncForPC(pc)
-		if funcForPc == nil {
-			break
-		}
-		name := funcForPc.Name()
-		if strings.HasPrefix(name, "runtime.") {
-			break
-		}
-		file, line := funcForPc.FileLine(pc)
-		fmt.Fprintf(buf, "\t%s\t%s: %d\n", name, file, line)
-	}
-	if _, err := buf.WriteTo(os.Stderr); err != nil {
-		errorOnLogging(err)
-	}
-}
-
 func errorOnLogging(err error) {
 	fmt.Fprintf(os.Stderr, "Unable to log: %v\n", err)
 }
 
-func printContext(buf *bytes.Buffer, err interface{}) {
-	// Note - we don't include globals when printing in order to avoid polluting the text log
-	values := ops.AsMap(err, false)
+func printContext(buf *bytes.Buffer, values map[string]interface{}) {
 	if len(values) == 0 {
 		return
 	}
