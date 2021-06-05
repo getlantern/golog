@@ -6,21 +6,10 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"sort"
 
 	"github.com/getlantern/hidden"
 )
-
-type outputFn func(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
-
-// Output is a log output that can optionally support structured logging
-type Output interface {
-	// Write debug messages
-	Debug(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
-
-	// Write error messages
-	Error(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
-}
 
 // TextOutput creates an output that writes text to different io.Writers for errors and debug
 func TextOutput(errorWriter io.Writer, debugWriter io.Writer) Output {
@@ -62,7 +51,7 @@ func (o *textOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 		ml, isMultiline := arg.(MultiLine)
 		if !isMultiline {
 			writeHeader()
-			fmt.Fprintf(buf, "%v", arg)
+			_, _ = fmt.Fprintf(buf, "%v", arg)
 			printContext(buf, values)
 			buf.WriteByte('\n')
 		} else {
@@ -88,7 +77,12 @@ func (o *textOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 		errorOnLogging(err)
 	}
 	if printStack {
-		o.printStack(writer)
+		var b []byte
+		buf := bytes.NewBuffer(b)
+		getStack(buf, o.pc)
+		if _, err := buf.WriteTo(writer); err != nil {
+			errorOnLogging(err)
+		}
 	}
 }
 
@@ -101,22 +95,24 @@ func (o *textOutput) linePrefix(prefix string, skipFrames int) string {
 	return fmt.Sprintf("%s%s:%d ", prefix, filepath.Base(file), line)
 }
 
-func (o *textOutput) printStack(writer io.Writer) {
-	var b []byte
-	buf := bytes.NewBuffer(b)
-	for _, pc := range o.pc {
-		funcForPc := runtime.FuncForPC(pc)
-		if funcForPc == nil {
-			break
-		}
-		name := funcForPc.Name()
-		if strings.HasPrefix(name, "runtime.") {
-			break
-		}
-		file, line := funcForPc.FileLine(pc)
-		fmt.Fprintf(buf, "\t%s\t%s: %d\n", name, file, line)
+func printContext(buf *bytes.Buffer, values map[string]interface{}) {
+	if len(values) == 0 {
+		return
 	}
-	if _, err := buf.WriteTo(writer); err != nil {
-		errorOnLogging(err)
+	buf.WriteString(" [")
+	var keys []string
+	for key := range values {
+		keys = append(keys, key)
 	}
+	sort.Strings(keys)
+	for i, key := range keys {
+		value := values[key]
+		if i > 0 {
+			buf.WriteString(" ")
+		}
+		buf.WriteString(key)
+		buf.WriteString("=")
+		_, _ = fmt.Fprintf(buf, "%v", value)
+	}
+	buf.WriteByte(']')
 }
