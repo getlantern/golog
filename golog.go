@@ -382,7 +382,7 @@ func report(err error, severity Severity) error {
 	return err
 }
 
-func getStack(buf *bytes.Buffer, pcs []uintptr) {
+func writeStack(w io.Writer, pcs []uintptr) error {
 	for _, pc := range pcs {
 		funcForPc := runtime.FuncForPC(pc)
 		if funcForPc == nil {
@@ -393,6 +393,11 @@ func getStack(buf *bytes.Buffer, pcs []uintptr) {
 			break
 		}
 		file, line := funcForPc.FileLine(pc)
-		_, _ = fmt.Fprintf(buf, "\t%s\t%s: %d\n", name, file, line)
+		_, err := fmt.Fprintf(w, "\t%s\t%s: %d\n", name, file, line)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

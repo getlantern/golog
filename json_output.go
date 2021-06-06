@@ -1,7 +1,6 @@
 package golog
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,9 +51,9 @@ func (o *jsonOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 	cleanPrefix := prefix[0 : len(prefix)-2] // prefix contains ': ' at the end, strip it
 	event := Event{Component: cleanPrefix, Severity: severity, Caller: o.caller(skipFrames), Ops: values}
 	if printStack {
-		var b []byte
-		buf := bytes.NewBuffer(b)
-		getStack(buf, o.pc)
+		buf := bufferPool.Get()
+		defer bufferPool.Put(buf)
+		writeStack(buf, o.pc)
 		event.Stack = buf.String()
 	}
 	encoder := json.NewEncoder(writer)
