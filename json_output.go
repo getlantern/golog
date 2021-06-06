@@ -31,7 +31,7 @@ type Event struct {
 	Message   string                 `json:"msg,omitempty"`
 	Component string                 `json:"component,omitempty"`
 	Caller    string                 `json:"caller,omitempty"`
-	Ops       map[string]interface{} `json:"ops,omitempty"`
+	Context   map[string]interface{} `json:"context,omitempty"`
 	Severity  string                 `json:"level,omitempty"`
 	Stack     string                 `json:"stack,omitempty"`
 }
@@ -45,15 +45,12 @@ func (o *jsonOutput) Debug(prefix string, skipFrames int, printStack bool, sever
 }
 
 func (o *jsonOutput) print(writer io.Writer, prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{}) {
-	buf := bufferPool.Get()
-	defer bufferPool.Put(buf)
-
 	cleanPrefix := prefix[0 : len(prefix)-2] // prefix contains ': ' at the end, strip it
-	event := Event{Component: cleanPrefix, Severity: severity, Caller: o.caller(skipFrames), Ops: values}
+	event := Event{Component: cleanPrefix, Severity: severity, Caller: o.caller(skipFrames), Context: values}
 	if printStack {
 		buf := bufferPool.Get()
 		defer bufferPool.Put(buf)
-		writeStack(buf, o.pc)
+		_ = writeStack(buf, o.pc)
 		event.Stack = buf.String()
 	}
 	encoder := json.NewEncoder(writer)
@@ -61,6 +58,8 @@ func (o *jsonOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 		if ml, isMultiline := arg.(MultiLine); !isMultiline {
 			event.Message = fmt.Sprintf("%v", arg)
 		} else {
+			buf := bufferPool.Get()
+			defer bufferPool.Put(buf)
 			mlp := ml.MultiLinePrinter()
 			for {
 				more := mlp(buf)
