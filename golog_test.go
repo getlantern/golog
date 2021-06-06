@@ -2,6 +2,7 @@ package golog
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"os"
@@ -18,7 +19,12 @@ import (
 )
 
 var (
-	expectedLog      = "SEVERITY myprefix: golog_test.go:999 Hello world\nSEVERITY myprefix: golog_test.go:999 Hello true [cvarA=a cvarB=b op=name root_op=name]\n"
+	expectedLog     = "SEVERITY myprefix: golog_test.go:999 Hello world\nSEVERITY myprefix: golog_test.go:999 Hello true [cvarA=a cvarB=b op=name root_op=name]\n"
+	expectedLogJson = `{"level": "DEBUG", "component": "myprefix", "caller":"golog_test.go:999", "msg": "Hello world"}
+{"level": "DEBUG", "component": "myprefix", "caller":"golog_test.go:999", "msg": "Hello true", "context": {"cvarA":"a", "cvarB":"b", "op":"name", "root_op":"name"}}`
+	expectedErrorLogJson = `{"level": "ERROR", "component": "myprefix", "caller":"golog_test.go:999", "msg": "Hello world\n  at github.com/getlantern/golog.TestErrorJson (golog_test.go:999)\n  at testing.tRunner (testing.go:999)\n  at runtime.goexit (asm_amd999.s:999)\nCaused by: world\n  at github.com/getlantern/golog.errorReturner (golog_test.go:999)\n  at github.com/getlantern/golog.TestErrorJson (golog_test.go:999)\n  at testing.tRunner (testing.go:999)\n  at runtime.goexit (asm_amd999.s:999)\n", "context":{"cvarC":"c","cvarD":"d","error":"Hello %v","error_location":"github.com/getlantern/golog.TestErrorJson (golog_test.go:999)","error_text":"Hello world","error_type":"errors.Error","op":"name","root_op":"name"}}
+{"level": "ERROR", "component": "myprefix", "caller":"golog_test.go:999", "msg": "Hello true\n  at github.com/getlantern/golog.TestErrorJson (golog_test.go:999)\n  at testing.tRunner (testing.go:999)\n  at runtime.goexit (asm_amd999.s:999)\nCaused by: Hello\n  at github.com/getlantern/golog.TestErrorJson (golog_test.go:999)\n  at testing.tRunner (testing.go:999)\n  at runtime.goexit (asm_amd999.s:999)\n", "context":{"cvarA":"a", "cvarB":"b", "cvarC":"c", "error":"%v %v", "error_location":"github.com/getlantern/golog.TestErrorJson (golog_test.go:999)", "error_text":"Hello true", "error_type":"errors.Error", "op":"name999", "root_op":"name999"}}
+`
 	expectedErrorLog = `ERROR myprefix: golog_test.go:999 Hello world [cvarC=c cvarD=d error=Hello %v error_location=github.com/getlantern/golog.TestError (golog_test.go:999) error_text=Hello world error_type=errors.Error op=name root_op=name]
 ERROR myprefix: golog_test.go:999   at github.com/getlantern/golog.TestError (golog_test.go:999)
 ERROR myprefix: golog_test.go:999   at testing.tRunner (testing.go:999)
@@ -63,21 +69,21 @@ func TestReport(t *testing.T) {
 		// ignore (prevents test from exiting)
 	})
 
-	errors := 0
-	fatals := 0
+	errorCount := 0
+	fatalCount := 0
 	RegisterReporter(func(err error, severity Severity, ctx map[string]interface{}) {
 		switch severity {
 		case ERROR:
-			errors++
+			errorCount++
 		case FATAL:
-			fatals++
+			fatalCount++
 		}
 	})
 	l := LoggerFor("reporting")
-	l.Error("Some error")
+	assert.Error(t, l.Error("Some error"))
 	l.Fatal("Fatal error")
-	assert.Equal(t, 1, errors)
-	assert.Equal(t, 1, fatals)
+	assert.Equal(t, 1, errorCount)
+	assert.Equal(t, 1, fatalCount)
 }
 
 func TestDebug(t *testing.T) {
@@ -90,6 +96,25 @@ func TestDebug(t *testing.T) {
 	assert.Equal(t, expected("DEBUG", expectedLog), out.String())
 }
 
+func TestDebugJson(t *testing.T) {
+	out := newBuffer()
+	SetOutput(JsonOutput(ioutil.Discard, out))
+	l := LoggerFor("myprefix")
+	l.Debug("Hello world")
+	defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").End()
+	l.Debugf("Hello %v", true)
+	expectedLines := strings.Split(expectedLogJson, "\n")
+	gotLines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	assert.Equal(t, len(expectedLines), len(gotLines))
+	for i := range expectedLines {
+		var expected Event
+		var got Event
+		assert.NoError(t, json.Unmarshal([]byte(expectedLines[i]), &expected))
+		assert.NoError(t, json.Unmarshal([]byte(gotLines[i]), &got))
+		assert.EqualValues(t, expected, got)
+	}
+}
+
 func TestError(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(out, ioutil.Discard)
@@ -99,11 +124,35 @@ func TestError(t *testing.T) {
 	err1 := errors.New("Hello %v", err)
 	err2 := errors.New("Hello")
 	ctx.End()
-	l.Error(err1)
+	assert.Error(t, l.Error(err1))
 	defer ops.Begin("name2").Set("cvarA", "a").Set("cvarB", "b").End()
-	l.Errorf("%v %v", err2, true)
+	assert.Error(t, l.Errorf("%v %v", err2, true))
 	t.Log(out.String())
 	assert.Equal(t, expectedErrorLog, out.String())
+}
+
+func TestErrorJson(t *testing.T) {
+	out := newBuffer()
+	SetOutput(JsonOutput(out, ioutil.Discard))
+	l := LoggerFor("myprefix")
+	ctx := ops.Begin("name").Set("cvarC", "c")
+	err := errorReturner()
+	err1 := errors.New("Hello %v", err)
+	err2 := errors.New("Hello")
+	ctx.End()
+	assert.Error(t, l.Error(err1))
+	defer ops.Begin("name2").Set("cvarA", "a").Set("cvarB", "b").End()
+	assert.Error(t, l.Errorf("%v %v", err2, true))
+	expectedLines := strings.Split(strings.TrimSpace(expectedErrorLogJson), "\n")
+	gotLines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	assert.Equal(t, len(expectedLines), len(gotLines))
+	for i := range expectedLines {
+		var expected Event
+		var got Event
+		assert.NoError(t, json.Unmarshal([]byte(expectedLines[i]), &expected))
+		assert.NoError(t, json.Unmarshal([]byte(gotLines[i]), &got))
+		assert.EqualValues(t, expected, got)
+	}
 }
 
 func errorReturner() error {

@@ -13,7 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"sort"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +31,17 @@ const (
 	// FATAL is an error Severity
 	FATAL = 600
 )
+
+type outputFn func(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
+
+// Output is a log output that can optionally support structured logging
+type Output interface {
+	// Write debug messages
+	Debug(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
+
+	// Write error messages
+	Error(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{})
+}
 
 var (
 	output         Output
@@ -348,29 +359,7 @@ func (l *logger) AsStdLogger() *log.Logger {
 }
 
 func errorOnLogging(err error) {
-	fmt.Fprintf(os.Stderr, "Unable to log: %v\n", err)
-}
-
-func printContext(buf *bytes.Buffer, values map[string]interface{}) {
-	if len(values) == 0 {
-		return
-	}
-	buf.WriteString(" [")
-	var keys []string
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for i, key := range keys {
-		value := values[key]
-		if i > 0 {
-			buf.WriteString(" ")
-		}
-		buf.WriteString(key)
-		buf.WriteString("=")
-		fmt.Fprintf(buf, "%v", value)
-	}
-	buf.WriteByte(']')
+	_, _ = fmt.Fprintf(os.Stderr, "Unable to log: %v\n", err)
 }
 
 func report(err error, severity Severity) error {
@@ -391,4 +380,24 @@ func report(err error, severity Severity) error {
 		}
 	}
 	return err
+}
+
+func writeStack(w io.Writer, pcs []uintptr) error {
+	for _, pc := range pcs {
+		funcForPc := runtime.FuncForPC(pc)
+		if funcForPc == nil {
+			break
+		}
+		name := funcForPc.Name()
+		if strings.HasPrefix(name, "runtime.") {
+			break
+		}
+		file, line := funcForPc.FileLine(pc)
+		_, err := fmt.Fprintf(w, "\t%s\t%s: %d\n", name, file, line)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
