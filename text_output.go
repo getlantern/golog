@@ -77,10 +77,7 @@ func (o *textOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 		errorOnLogging(err)
 	}
 	if printStack {
-		var b []byte
-		buf := bytes.NewBuffer(b)
-		getStack(buf, o.pc)
-		if _, err := buf.WriteTo(writer); err != nil {
+		if err := writeStack(writer, o.pc); err != nil {
 			errorOnLogging(err)
 		}
 	}
