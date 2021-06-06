@@ -91,7 +91,12 @@ func GetPrepender() func(io.Writer) {
 
 // SetOutputs sets the outputs for error and debug logs to use the given Outputs.
 // Returns a function that resets outputs to their original values prior to calling SetOutputs.
+// If env variable PRINT_JSON is set, use JSON output instead of plain text
 func SetOutputs(errorOut io.Writer, debugOut io.Writer) (reset func()) {
+	if printJson, _ := strconv.ParseBool(os.Getenv("PRINT_JSON")); printJson {
+		return SetOutput(JsonOutput(errorOut, debugOut))
+	}
+
 	return SetOutput(TextOutput(errorOut, debugOut))
 }
 
