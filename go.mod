@@ -10,5 +10,6 @@ require (
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.7.0
+	go.uber.org/zap v1.19.1
 )

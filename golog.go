@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"github.com/getlantern/errors"
+	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
 	"github.com/oxtoacart/bpool"
 )
@@ -238,7 +239,6 @@ type logger struct {
 	traceOn    bool
 	traceOut   io.Writer
 	printStack bool
-	outs       atomic.Value
 }
 
 func (l *logger) print(write outputFn, skipFrames int, severity string, arg interface{}) {
@@ -405,4 +405,25 @@ func writeStack(w io.Writer, pcs []uintptr) error {
 	}
 
 	return nil
+}
+
+func argToString(arg interface{}) string {
+	if arg != nil {
+		if ml, isMultiline := arg.(MultiLine); !isMultiline {
+			return fmt.Sprintf("%v", arg)
+		} else {
+			buf := bufferPool.Get()
+			defer bufferPool.Put(buf)
+			mlp := ml.MultiLinePrinter()
+			for {
+				more := mlp(buf)
+				buf.WriteByte('\n')
+				if !more {
+					break
+				}
+			}
+			return hidden.Clean(buf.String())
+		}
+	}
+	return ""
 }

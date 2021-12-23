@@ -14,6 +14,8 @@ import (
 
 	"github.com/getlantern/errors"
 	"github.com/getlantern/ops"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -113,6 +115,21 @@ func TestDebugJson(t *testing.T) {
 		assert.NoError(t, json.Unmarshal([]byte(gotLines[i]), &got))
 		assert.EqualValues(t, expected, got)
 	}
+}
+
+func TestDebugZap(t *testing.T) {
+	observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+	zl := zap.New(observedZapCore)
+
+	SetOutput(ZapOutput(zl))
+	l := LoggerFor("myprefix")
+	l.Debug("Hello world")
+	defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").End()
+	l.Debugf("Hello %v", true)
+	entries := observedLogs.All()
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, "Hello world", entries[0].Message)
+	assert.Equal(t, "name", entries[1].ContextMap()["op"])
 }
 
 func TestError(t *testing.T) {
