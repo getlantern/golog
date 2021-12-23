@@ -4,7 +4,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// JsonOutput creates an output that writes JSON structured log to different io.Writers for errors and debug
+// ZapOutput creates an output that writes using the provided Zap logger
 func ZapOutput(zapLogger *zap.Logger) Output {
 	return &zapOutput{zapLogger}
 }
@@ -25,7 +25,8 @@ func prepareLogger(prefix string, values map[string]interface{}, o *zapOutput, s
 	for k, v := range values {
 		fields = append(fields, zap.Any(k, v))
 	}
-	return fields, o.Logger.Named(cleanPrefix).WithOptions(zap.AddCallerSkip(skipFrames))
+
+	return fields, o.Logger.Named(cleanPrefix).WithOptions(zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel), zap.AddCallerSkip(skipFrames-3))
 }
 
 func (o *zapOutput) Debug(prefix string, skipFrames int, printStack bool, severity string, arg interface{}, values map[string]interface{}) {

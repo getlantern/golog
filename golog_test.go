@@ -132,6 +132,25 @@ func TestDebugZap(t *testing.T) {
 	assert.Equal(t, "name", entries[1].ContextMap()["op"])
 }
 
+func TestErrorZap(t *testing.T) {
+	observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+	zl := zap.New(observedZapCore, zap.AddStacktrace(zap.DebugLevel), zap.AddCaller())
+
+	SetOutput(ZapOutput(zl))
+	l := LoggerFor("myprefix")
+	ctx := ops.Begin("name").Set("cvarC", "c")
+	err := errorReturner()
+	err1 := errors.New("Hello %v", err)
+	err2 := errors.New("Hello")
+	ctx.End()
+	assert.Error(t, l.Error(err1))
+	defer ops.Begin("name2").Set("cvarA", "a").Set("cvarB", "b").End()
+	assert.Error(t, l.Errorf("%v %v", err2, true))
+	entries := observedLogs.All()
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, "github.com/getlantern/golog.TestErrorZap", entries[0].Entry.Caller.Function)
+}
+
 func TestError(t *testing.T) {
 	out := newBuffer()
 	SetOutputs(out, ioutil.Discard)
