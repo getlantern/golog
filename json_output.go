@@ -6,8 +6,6 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
-
-	"github.com/getlantern/hidden"
 )
 
 // JsonOutput creates an output that writes JSON structured log to different io.Writers for errors and debug
@@ -54,23 +52,7 @@ func (o *jsonOutput) print(writer io.Writer, prefix string, skipFrames int, prin
 		event.Stack = buf.String()
 	}
 	encoder := json.NewEncoder(writer)
-	if arg != nil {
-		if ml, isMultiline := arg.(MultiLine); !isMultiline {
-			event.Message = fmt.Sprintf("%v", arg)
-		} else {
-			buf := bufferPool.Get()
-			defer bufferPool.Put(buf)
-			mlp := ml.MultiLinePrinter()
-			for {
-				more := mlp(buf)
-				buf.WriteByte('\n')
-				if !more {
-					break
-				}
-			}
-			event.Message = hidden.Clean(buf.String())
-		}
-	}
+	event.Message = argToString(arg)
 
 	if err := encoder.Encode(event); err != nil {
 		errorOnLogging(err)

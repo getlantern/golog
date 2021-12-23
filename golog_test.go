@@ -14,6 +14,8 @@ import (
 
 	"github.com/getlantern/errors"
 	"github.com/getlantern/ops"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -113,6 +115,40 @@ func TestDebugJson(t *testing.T) {
 		assert.NoError(t, json.Unmarshal([]byte(gotLines[i]), &got))
 		assert.EqualValues(t, expected, got)
 	}
+}
+
+func TestDebugZap(t *testing.T) {
+	observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+	zl := zap.New(observedZapCore)
+
+	SetOutput(ZapOutput(zl))
+	l := LoggerFor("myprefix")
+	l.Debug("Hello world")
+	defer ops.Begin("name").Set("cvarA", "a").Set("cvarB", "b").End()
+	l.Debugf("Hello %v", true)
+	entries := observedLogs.All()
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, "Hello world", entries[0].Message)
+	assert.Equal(t, "name", entries[1].ContextMap()["op"])
+}
+
+func TestErrorZap(t *testing.T) {
+	observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+	zl := zap.New(observedZapCore, zap.AddStacktrace(zap.DebugLevel), zap.AddCaller())
+
+	SetOutput(ZapOutput(zl))
+	l := LoggerFor("myprefix")
+	ctx := ops.Begin("name").Set("cvarC", "c")
+	err := errorReturner()
+	err1 := errors.New("Hello %v", err)
+	err2 := errors.New("Hello")
+	ctx.End()
+	assert.Error(t, l.Error(err1))
+	defer ops.Begin("name2").Set("cvarA", "a").Set("cvarB", "b").End()
+	assert.Error(t, l.Errorf("%v %v", err2, true))
+	entries := observedLogs.All()
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, "github.com/getlantern/golog.TestErrorZap", entries[0].Entry.Caller.Function)
 }
 
 func TestError(t *testing.T) {
