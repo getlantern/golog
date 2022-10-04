@@ -1,7 +1,9 @@
 // Package golog implements logging functions that log errors to stderr and
 // debug messages to stdout. Trace logging is also supported.
 // Trace logs go to stdout as well, but they are only written if the program
-// is run with environment variable "TRACE=true".
+// is run with environment variable "TRACE=true", or if the program is built
+// with the linker flag "-X github.com/getlantern/golog.enableTraceThroughLinker=true".
+//
 // A stack dump will be printed after the message if "PRINT_STACK=true".
 package golog
 
@@ -54,6 +56,11 @@ var (
 	bufferPool = bpool.NewBufferPool(200)
 
 	onFatal atomic.Value
+
+	// enableTraceThroughLinker is set through a linker flag. It's used to
+	// enforce tracing through a linker flag. It can either be set to "true",
+	// "1", or "TRUE". Any other value will be ignored.
+	enableTraceThroughLinker string
 )
 
 // Severity is a level of error (higher values are more severe)
@@ -206,25 +213,34 @@ type Logger interface {
 	AsStdLogger() *log.Logger
 }
 
+// shouldEnableTrace returns true if tracing was enforced through a linker
+// flag, or if TRACE=true is set in the environment, while favoring the former.
+func shouldEnableTrace() bool {
+	if strings.ToLower(enableTraceThroughLinker) == "true" ||
+		enableTraceThroughLinker == "1" {
+		return true
+	}
+
+	var v bool
+	v, _ = strconv.ParseBool(os.Getenv("TRACE"))
+	if v == true {
+		return true
+	}
+
+	return false
+}
+
 func LoggerFor(prefix string) Logger {
 	l := &logger{
 		prefix: prefix + ": ",
 	}
 
-	trace := os.Getenv("TRACE")
-	l.traceOn, _ = strconv.ParseBool(trace)
-	if !l.traceOn {
-		prefixes := strings.Split(trace, ",")
-		for _, p := range prefixes {
-			if prefix == strings.Trim(p, " ") {
-				l.traceOn = true
-				break
-			}
-		}
-	}
+	l.traceOn = shouldEnableTrace()
 	if l.traceOn {
+		fmt.Printf("TRACE logging is enabled for prefix [%s]\n", prefix)
 		l.traceOut = l.newTraceWriter()
 	} else {
+		fmt.Printf("TRACE logging is NOT enabled for prefix [%s]\n", prefix)
 		l.traceOut = ioutil.Discard
 	}
 
