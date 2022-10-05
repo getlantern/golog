@@ -1,8 +1,23 @@
 // Package golog implements logging functions that log errors to stderr and
-// debug messages to stdout. Trace logging is also supported.
-// Trace logs go to stdout as well, but they are only written if the program
-// is run with environment variable "TRACE=true", or if the program is built
-// with the linker flag "-X github.com/getlantern/golog.enableTraceThroughLinker=true".
+// debug messages to stdout.
+//
+// Trace logs go to stdout as well, but they are only written if a linker flag
+// or an environment variable is set as such:
+//
+// - The following linker flag is set
+//
+//     -X github.com/getlantern/golog.linkerFlagEnableTraceThroughLinker=true
+//
+// - Optionally, you can also set a comma-separated list of prefixes to trace
+//   through the following linker flag
+//
+//     -X github.com/getlantern/golog.linkerFlagTracePrefixes=prefix1,prefix2
+//
+// - Or, alternatively, trace logging can also be enable if "TRACE=true"
+//   environment variable is set
+//
+// - Optionally, you can also set a comma-separated list of prefixes to trace
+//   through the "TRACE" environment variable like this: "TRACE=prefix1,prefix2"
 //
 // A stack dump will be printed after the message if "PRINT_STACK=true".
 package golog
@@ -60,7 +75,8 @@ var (
 	// enableTraceThroughLinker is set through a linker flag. It's used to
 	// enforce tracing through a linker flag. It can either be set to "true",
 	// "1", or "TRUE". Any other value will be ignored.
-	enableTraceThroughLinker string
+	linkerFlagEnableTraceThroughLinker string
+	linkerFlagTracePrefixes            string
 )
 
 // Severity is a level of error (higher values are more severe)
@@ -215,16 +231,40 @@ type Logger interface {
 
 // shouldEnableTrace returns true if tracing was enforced through a linker
 // flag, or if TRACE=true is set in the environment, while favoring the former.
-func shouldEnableTrace() bool {
-	if strings.ToLower(enableTraceThroughLinker) == "true" ||
-		enableTraceThroughLinker == "1" {
+func shouldEnableTrace(currentPrefix string) bool {
+	// Linker flag checks
+	// ------------------
+	if strings.ToLower(linkerFlagEnableTraceThroughLinker) == "true" ||
+		// if trace through linker flags is set, check if the current prefix is
+		// included in the list of prefixes to trace
+		linkerFlagEnableTraceThroughLinker == "1" {
+		// Only return true if the current prefix is included in the list of
+		// prefixes to trace
+		prefixesToTrace := strings.Split(linkerFlagTracePrefixes, ",")
+		for _, prefix := range prefixesToTrace {
+			if strings.ToLower(prefix) == strings.ToLower(currentPrefix) {
+				return true
+			}
+		}
 		return true
 	}
 
-	var v bool
-	v, _ = strconv.ParseBool(os.Getenv("TRACE"))
-	if v == true {
+	// Environment variable checks
+	// ---------------------
+	// If TRACE=true is set in the environment, return true
+	envVar := os.Getenv("TRACE")
+	if envVar == "" {
+		return false
+	}
+	if v, err := strconv.ParseBool(os.Getenv("TRACE")); err == nil && v {
 		return true
+	}
+	// Else, this could be a comma-separated list of prefixes to trace
+	// If the current prefix is included in the list, return true
+	for _, prefix := range strings.Split(envVar, ",") {
+		if strings.ToLower(prefix) == strings.ToLower(currentPrefix) {
+			return true
+		}
 	}
 
 	return false
@@ -235,7 +275,7 @@ func LoggerFor(prefix string) Logger {
 		prefix: prefix + ": ",
 	}
 
-	l.traceOn = shouldEnableTrace()
+	l.traceOn = shouldEnableTrace(prefix)
 	if l.traceOn {
 		fmt.Printf("TRACE logging is enabled for prefix [%s]\n", prefix)
 		l.traceOut = l.newTraceWriter()
