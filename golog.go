@@ -231,6 +231,8 @@ type Logger interface {
 
 // shouldEnableTrace returns true if tracing was enforced through a linker
 // flag, or if TRACE=true is set in the environment, while favoring the former.
+//
+// See the top-level comment for more information.
 func shouldEnableTrace(currentPrefix string) bool {
 	// Linker flag checks
 	// ------------------
