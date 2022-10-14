@@ -6,18 +6,18 @@
 //
 // - The following linker flag is set
 //
-//     -X github.com/getlantern/golog.linkerFlagEnableTraceThroughLinker=true
+//		-X github.com/getlantern/golog.linkerFlagEnableTraceThroughLinker=true
 //
-// - Optionally, you can also set a comma-separated list of prefixes to trace
-//   through the following linker flag
+//	  - Optionally, you can also set a comma-separated list of prefixes to trace
+//	    through the following linker flag
 //
-//     -X github.com/getlantern/golog.linkerFlagTracePrefixes=prefix1,prefix2
+//	    -X github.com/getlantern/golog.linkerFlagTracePrefixes=prefix1,prefix2
 //
-// - Or, alternatively, trace logging can also be enable if "TRACE=true"
-//   environment variable is set
+//	  - Or, alternatively, trace logging can also be enable if "TRACE=true"
+//	    environment variable is set
 //
-// - Optionally, you can also set a comma-separated list of prefixes to trace
-//   through the "TRACE" environment variable like this: "TRACE=prefix1,prefix2"
+//	  - Optionally, you can also set a comma-separated list of prefixes to trace
+//	    through the "TRACE" environment variable like this: "TRACE=prefix1,prefix2"
 //
 // A stack dump will be printed after the message if "PRINT_STACK=true".
 package golog
@@ -39,7 +39,6 @@ import (
 	"github.com/getlantern/errors"
 	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
-	"github.com/oxtoacart/bpool"
 )
 
 const (
@@ -67,8 +66,6 @@ var (
 	prepender      atomic.Value
 	reporters      []ErrorReporter
 	reportersMutex sync.RWMutex
-
-	bufferPool = bpool.NewBufferPool(200)
 
 	onFatal atomic.Value
 
@@ -470,8 +467,8 @@ func argToString(arg interface{}) string {
 		if ml, isMultiline := arg.(MultiLine); !isMultiline {
 			return fmt.Sprintf("%v", arg)
 		} else {
-			buf := bufferPool.Get()
-			defer bufferPool.Put(buf)
+			buf := getBuffer()
+			defer returnBuffer(buf)
 			mlp := ml.MultiLinePrinter()
 			for {
 				more := mlp(buf)
