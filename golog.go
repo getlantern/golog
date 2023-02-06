@@ -279,7 +279,6 @@ func LoggerFor(prefix string) Logger {
 		fmt.Printf("TRACE logging is enabled for prefix [%s]\n", prefix)
 		l.traceOut = l.newTraceWriter()
 	} else {
-		fmt.Printf("TRACE logging is NOT enabled for prefix [%s]\n", prefix)
 		l.traceOut = ioutil.Discard
 	}
 
