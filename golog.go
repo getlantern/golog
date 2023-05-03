@@ -222,8 +222,14 @@ type Logger interface {
 	// logger.
 	IsTraceEnabled() bool
 
-	// AsStdLogger returns an standard logger
+	// AsDebugLogger returns an standard logger that writes Debug messages
+	AsDebugLogger() *log.Logger
+
+	// AsStdLogger returns an standard logger that writes Errors
 	AsStdLogger() *log.Logger
+
+	// AsErrorLogger returns an standard logger that writes Errors
+	AsErrorLogger() *log.Logger
 }
 
 // shouldEnableTrace returns true if tracing was enforced through a linker
@@ -398,23 +404,46 @@ func (l *logger) newTraceWriter() io.Writer {
 	return pw
 }
 
+type debugWriter struct {
+	l *logger
+}
+
+// Write implements method of io.Writer, due to different call depth,
+// it will not log correct file and line prefixes
+func (w *debugWriter) Write(p []byte) (n int, err error) {
+	s := string(p)
+	if s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	w.l.print(getDebugOut(), 7, "DEBUG", s)
+	return len(p), nil
+}
+
+func (l *logger) AsDebugLogger() *log.Logger {
+	return log.New(&debugWriter{l}, "", 0)
+}
+
 type errorWriter struct {
 	l *logger
 }
 
 // Write implements method of io.Writer, due to different call depth,
-// it will not log correct file and line prefix
+// it will not log correct file and line prefixes
 func (w *errorWriter) Write(p []byte) (n int, err error) {
 	s := string(p)
 	if s[len(s)-1] == '\n' {
 		s = s[:len(s)-1]
 	}
-	w.l.print(getErrorOut(), 6, "ERROR", s)
+	w.l.print(getErrorOut(), 7, "ERROR", s)
 	return len(p), nil
 }
 
-func (l *logger) AsStdLogger() *log.Logger {
+func (l *logger) AsErrorLogger() *log.Logger {
 	return log.New(&errorWriter{l}, "", 0)
+}
+
+func (l *logger) AsStdLogger() *log.Logger {
+	return l.AsErrorLogger()
 }
 
 func errorOnLogging(err error) {
