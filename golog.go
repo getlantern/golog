@@ -25,6 +25,7 @@ package golog
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -39,6 +40,11 @@ import (
 	"github.com/getlantern/errors"
 	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
+	"go.opentelemetry.io/otel/attribute"
+	otlpLog "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	otelLogSdk "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
 const (
@@ -275,7 +281,7 @@ func shouldEnableTrace(currentPrefix string) bool {
 	return false
 }
 
-func LoggerFor(prefix string) Logger {
+func loggerFor(prefix string) Logger {
 	l := &logger{
 		prefix: prefix + ": ",
 	}
@@ -292,6 +298,48 @@ func LoggerFor(prefix string) Logger {
 	l.printStack, _ = strconv.ParseBool(printStack)
 
 	return l
+}
+
+type Opts struct {
+	HostMachine string
+	TrackName   string
+	RouteName   string
+}
+
+func SetOpts(opts *Opts) {
+	loggerOpts = opts
+}
+
+func LoggerFor(loggerLoc string) *ProxyLogger {
+	goLog := loggerFor(loggerLoc)
+	p := &ProxyLogger{
+		stdLogger: goLog,
+	}
+
+	if loggerOpts == nil {
+		return p
+	}
+
+	expLog, err := otlpLog.New(context.Background(),
+		otlpLog.WithEndpoint(otelEndpoint),
+		otlpLog.WithInsecure(), // the endpoint is on the lo interface, so this "might" be safe
+	)
+	if err != nil {
+		return p
+	}
+
+	resourceAttributes := []attribute.KeyValue{semconv.ServiceNameKey.String(otelServiceName), attribute.String("logger_location", loggerLoc)}
+	resourceAttributes = append(resourceAttributes, loggerOpts.attrKV()...)
+
+	r := resource.NewWithAttributes(semconv.SchemaURL, resourceAttributes...)
+	provider := otelLogSdk.NewLoggerProvider(
+		otelLogSdk.WithProcessor(otelLogSdk.NewBatchProcessor(expLog)),
+		otelLogSdk.WithResource(r),
+	)
+
+	p.otelLogger = provider.Logger(otelServiceName)
+	p.initializedOtel = true
+	return p
 }
 
 type logger struct {
