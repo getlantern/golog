@@ -317,8 +317,8 @@ func LoggerFor(loggerLoc string) *ProxyLogger {
 	}
 
 	opts := &Opts{
-		HostMachine: "TEST",
-		TrackName:   "TEST",
+		HostMachine: "TESTER",
+		TrackName:   "TESTER",
 	}
 
 	expLog, err := otlpLog.New(context.Background(),
