@@ -316,9 +316,9 @@ func LoggerFor(loggerLoc string) *ProxyLogger {
 		stdLogger: goLog,
 	}
 
-	if loggerOpts == nil {
-		return p
-	}
+	// if loggerOpts == nil {
+	// 	return p
+	// }
 
 	expLog, err := otlpLog.New(context.Background(),
 		otlpLog.WithEndpoint(otelEndpoint),
