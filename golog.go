@@ -316,9 +316,10 @@ func LoggerFor(loggerLoc string) *ProxyLogger {
 		stdLogger: goLog,
 	}
 
-	// if loggerOpts == nil {
-	// 	return p
-	// }
+	opts := &Opts{
+		HostMachine: "TEST",
+		TrackName:   "TEST",
+	}
 
 	expLog, err := otlpLog.New(context.Background(),
 		otlpLog.WithEndpoint(otelEndpoint),
@@ -329,7 +330,7 @@ func LoggerFor(loggerLoc string) *ProxyLogger {
 	}
 
 	resourceAttributes := []attribute.KeyValue{semconv.ServiceNameKey.String(otelServiceName), attribute.String("logger_location", loggerLoc)}
-	resourceAttributes = append(resourceAttributes, loggerOpts.attrKV()...)
+	resourceAttributes = append(resourceAttributes, opts.attrKV()...)
 
 	r := resource.NewWithAttributes(semconv.SchemaURL, resourceAttributes...)
 	provider := otelLogSdk.NewLoggerProvider(
